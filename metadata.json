@@ -1,0 +1,6 @@
+{
+  "name": "Laodicean — Community Social Blogging",
+  "description": "Mobile-first community social blogging platform starting with Juja (JKUAT campus in Kenya), built for weak data and WhatsApp-first sharing.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

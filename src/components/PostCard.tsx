@@ -1,198 +1,551 @@
-import React from 'react';
-import { Heart, MessageCircle, Share2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { CommentWithAuthor, FeedPost, PostType, Profile } from '../types';
+import { truncateTeaser } from '../lib/posts';
+import { ReactionsBar } from './ReactionsBar';
+import { CommentsSection } from './CommentsSection';
+import { ShareModal } from './ShareModal';
+import { PollCardContent } from './PollCardContent';
 import {
-  estimateReadingMinutes,
-  formatRelativeTime,
-  getPostTypeLabel,
-} from '../lib/feedLogic';
-import { Post, PostType } from '../types/laodicean';
-import { SmartImage } from './SmartImage';
+  Clock,
+  MessageCircle,
+  Share2,
+  ShieldAlert,
+  ChevronDown,
+  ChevronUp,
+  FileText,
+  Image as ImageIcon,
+  CheckCircle2,
+  ExternalLink,
+  Flag,
+  Eye,
+  EyeOff,
+  Calendar,
+  MapPin,
+  Quote,
+  Users,
+  Check,
+  Smartphone,
+} from 'lucide-react';
+import { ShareCardModal } from './ShareCardModal';
 
 interface PostCardProps {
-  post: Post;
-  liteMode: boolean;
-  onOpenPost: (slug: string) => void;
-  onToggleLike: (postId: string) => void;
-  onShareWhatsApp: (post: Post) => void;
-  onFilterBySpot?: (spot: string) => void;
+  post: FeedPost;
+  currentUserProfile?: Profile | null;
+  onRequireAuth: (message: string) => void;
+  onSelectPost?: (post: FeedPost) => void;
+  isPinned?: boolean;
+  onTogglePin?: (postId: string) => void;
+  onReportPost?: (post: FeedPost) => void;
+  onReportComment?: (comment: CommentWithAuthor) => void;
+  onToggleHidePost?: (postId: string, currentStatus?: 'live' | 'hidden') => void;
 }
 
-/**
- * Unified feed card rendering Stories, Quick Gists, Photos, and Campus Notices
- * inside one endless scroll. Uses clean inline metadata with typographic separators.
- */
-export const PostCard: React.FC<PostCardProps> = ({
+export function PostCard({
   post,
-  liteMode,
-  onOpenPost,
-  onToggleLike,
-  onShareWhatsApp,
-  onFilterBySpot,
-}) => {
-  const isLongStory = post.postType === PostType.Story && post.body.length > 260;
-  const previewBody = isLongStory
-    ? `${post.body.slice(0, 260).trimEnd()}…`
-    : post.body;
-  const readMins =
-    post.postType === PostType.Story ? estimateReadingMinutes(post.body) : null;
+  currentUserProfile,
+  onRequireAuth,
+  onSelectPost,
+  isPinned = false,
+  onTogglePin,
+  onReportPost,
+  onReportComment,
+  onToggleHidePost,
+}: PostCardProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [showComments, setShowComments] = useState(false);
+  const [commentsCount, setCommentsCount] = useState(post.comments_count ?? 0);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [shareCardModalOpen, setShareCardModalOpen] = useState(false);
+  const [hasRsvped, setHasRsvped] = useState<boolean>(() => {
+    if (post.event_data?.user_has_rsvped) return true;
+    try {
+      return localStorage.getItem(`juja_rsvp_${post.id}`) === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [rsvpCount, setRsvpCount] = useState<number>(post.event_data?.rsvp_count ?? 0);
 
-  const initials = post.authorName
-    .split(' ')
-    .map((part) => part[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase();
+  const handleToggleRsvp = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!currentUserProfile) {
+      onRequireAuth('Please log in to RSVP for this campus event.');
+      return;
+    }
+    const nextState = !hasRsvped;
+    setHasRsvped(nextState);
+    setRsvpCount((prev) => Math.max(0, prev + (nextState ? 1 : -1)));
+    try {
+      const key = `juja_rsvp_${post.id}`;
+      if (nextState) {
+        localStorage.setItem(key, 'true');
+      } else {
+        localStorage.removeItem(key);
+      }
+    } catch {
+      // storage error ignored
+    }
+  };
+
+  const { teaser, isTruncated } = truncateTeaser(post.body, 175);
+
+  const getPostTypeBadge = (type: PostType) => {
+    switch (type) {
+      case 'story':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-900 border border-emerald-200">
+            <FileText className="w-3 h-3 text-emerald-700" />
+            <span>Story</span>
+          </span>
+        );
+      case 'photo':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-950 border border-amber-200">
+            <ImageIcon className="w-3 h-3 text-amber-700" />
+            <span>Photo</span>
+          </span>
+        );
+      case 'mushene':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-50 text-rose-900 border border-rose-200">
+            <span>🗣️</span>
+            <span>Mushene</span>
+          </span>
+        );
+      case 'event':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-50 text-indigo-900 border border-indigo-200">
+            <span>📅</span>
+            <span>Event</span>
+          </span>
+        );
+      case 'confession':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-50 text-purple-900 border border-purple-200">
+            <span>🤫</span>
+            <span>Confession</span>
+          </span>
+        );
+      case 'poll':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-900 border border-blue-200">
+            <span>📊</span>
+            <span>Poll</span>
+          </span>
+        );
+      case 'meme':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-orange-50 text-orange-950 border border-orange-200">
+            <span>😂</span>
+            <span>Meme</span>
+          </span>
+        );
+      default:
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-stone-100 text-stone-800">
+            <span>{type}</span>
+          </span>
+        );
+    }
+  };
+
+  const formatRelativeTime = (isoString: string) => {
+    try {
+      const date = new Date(isoString);
+      const diffMinutes = Math.floor((Date.now() - date.getTime()) / (1000 * 60));
+      if (diffMinutes < 1) return 'Just now';
+      if (diffMinutes < 60) return `${diffMinutes}m ago`;
+      const diffHours = Math.floor(diffMinutes / 60);
+      if (diffHours < 24) return `${diffHours}h ago`;
+      const diffDays = Math.floor(diffHours / 24);
+      if (diffDays < 7) return `${diffDays}d ago`;
+      return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    } catch {
+      return 'Recently';
+    }
+  };
 
   return (
-    <article className="bg-white border border-stone-200/90 rounded-2xl p-5 sm:p-6 transition-colors hover:border-stone-300">
-      {/* Unboxed inline metadata row (Zero-Pill Discipline) */}
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-zinc-500 mb-3">
-        <span className="font-semibold text-zinc-800">c/{post.communitySlug}</span>
-        <span aria-hidden="true">·</span>
-        {onFilterBySpot ? (
-          <button
-            type="button"
-            onClick={() => onFilterBySpot(post.spot)}
-            className="hover:text-emerald-800 hover:underline transition-colors cursor-pointer"
-          >
-            {post.spot}
-          </button>
-        ) : (
-          <span>{post.spot}</span>
-        )}
-        <span aria-hidden="true">·</span>
-        <span
-          className={
-            post.postType === PostType.Notice
-              ? 'font-semibold text-amber-800'
-              : 'font-medium text-zinc-700'
-          }
-        >
-          {getPostTypeLabel(post.postType)}
-        </span>
-        {readMins !== null && (
-          <>
-            <span aria-hidden="true">·</span>
-            <span className="tabular-nums">{readMins} min read</span>
-          </>
-        )}
-        <span aria-hidden="true">·</span>
-        <time dateTime={post.createdAt} className="tabular-nums">
-          {formatRelativeTime(post.createdAt)}
-        </time>
-      </div>
-
-      {/* Main clickable content block */}
-      <div className="space-y-3">
-        {post.title && (
-          <h2 className="font-display text-lg sm:text-xl font-bold text-zinc-950 leading-snug text-balance">
-            <a
-              href={`/p/${post.slug}`}
-              onClick={(e) => {
-                e.preventDefault();
-                onOpenPost(post.slug);
-              }}
-              className="hover:text-emerald-900 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-800 rounded-sm"
-            >
-              {post.title}
-            </a>
-          </h2>
-        )}
-
-        <p className="text-[15px] leading-relaxed text-zinc-700 whitespace-pre-line max-w-[68ch]">
-          {previewBody}
-          {isLongStory && (
-            <>
-              {' '}
-              <a
-                href={`/p/${post.slug}`}
-                onClick={(e) => {
-                  e.preventDefault();
-                  onOpenPost(post.slug);
-                }}
-                className="font-semibold text-emerald-800 hover:underline whitespace-nowrap"
-              >
-                Read full story
-              </a>
-            </>
-          )}
-        </p>
-
-        {post.imageUrl && (
-          <div className="pt-1">
-            <SmartImage
-              src={post.imageUrl}
-              alt={post.imageAlt || post.title || 'Juja campus post photo'}
-              sizeKb={post.imageKb}
-              liteMode={liteMode}
-            />
+    <article
+      className={`bg-white rounded-2xl p-4 sm:p-5 shadow-xs space-y-3.5 transition-all ${
+        isPinned
+          ? 'border-2 border-amber-300 ring-2 ring-amber-200/50 hover:border-amber-400'
+          : 'border border-stone-200/90 hover:border-stone-300'
+      }`}
+    >
+      {/* Pinned Poll of the Week Banner */}
+      {isPinned && (
+        <div className="bg-gradient-to-r from-amber-500/10 via-amber-400/20 to-amber-500/10 border-b border-amber-200/80 -mx-4 -mt-4 mb-3 sm:-mx-5 sm:-mt-5 sm:mb-3.5 px-4 py-2 sm:px-5 flex items-center justify-between text-amber-950 font-semibold text-xs rounded-t-2xl">
+          <div className="flex items-center gap-1.5">
+            <span className="text-sm">📌</span>
+            <span className="tracking-tight">Juja Poll of the Week</span>
           </div>
-        )}
-      </div>
+          <span className="text-[10px] font-mono text-amber-900 bg-amber-100/90 px-1.5 py-0.5 rounded border border-amber-300/80 uppercase tracking-wider font-bold">
+            Pinned
+          </span>
+        </div>
+      )}
 
-      {/* Author attribution + ergonomic action bar */}
-      <div className="mt-4 pt-3.5 border-t border-stone-100 flex flex-wrap items-center justify-between gap-3">
+      {/* Header: Author Identity & Post Type */}
+      <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2.5 min-w-0">
-          <div
-            aria-hidden="true"
-            className="w-8 h-8 rounded-full bg-stone-200/80 text-zinc-800 text-xs font-bold flex items-center justify-center shrink-0"
-          >
-            {initials}
+          {/* Avatar */}
+          <div className="w-10 h-10 rounded-full bg-stone-100 flex items-center justify-center text-lg shrink-0 border border-stone-200 shadow-2xs">
+            {post.is_persona ? post.persona_avatar || '🎭' : '👤'}
           </div>
-          <div className="min-w-0 text-xs leading-tight">
-            <div className="flex items-center gap-1.5 truncate">
-              <span className="font-semibold text-zinc-900 truncate">
-                {post.authorName}
-              </span>
-              <span className="text-zinc-500 truncate">{post.authorHandle}</span>
+
+          {/* Name & Handle */}
+          <div className="min-w-0 leading-tight">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {post.is_persona ? (
+                <>
+                  <span className="font-mono text-xs font-bold text-zinc-900 truncate">
+                    {post.persona_name}
+                  </span>
+                  <span className="text-[10px] font-medium text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-200/70">
+                    Persona
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="text-xs font-bold text-zinc-900 truncate">
+                    {post.author_real_name || 'Campus Member'}
+                  </span>
+                  <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200/70">
+                    <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
+                    <span>Real Name</span>
+                  </span>
+                </>
+              )}
+
+              {/* Admin unmask indicator - reveals real student name to admins */}
+              {post.is_persona && currentUserProfile?.role === 'admin' && (
+                <span
+                  title={`Admin View: Verified student identity is ${post.author_real_name || 'Student Verified'}`}
+                  className="text-[9px] font-mono text-amber-950 bg-amber-100/90 border border-amber-300 px-1.5 py-0.5 rounded flex items-center gap-1 font-bold shadow-2xs"
+                >
+                  <ShieldAlert className="w-2.5 h-2.5 text-amber-700" />
+                  <span>Admin: {post.author_real_name || 'Verified Student'}</span>
+                </span>
+              )}
             </div>
-            {post.authorCourse && (
-              <p className="text-zinc-500 truncate mt-0.5">{post.authorCourse}</p>
+
+            <div className="flex items-center gap-1 text-[11px] text-zinc-400 mt-0.5">
+              <Clock className="w-3 h-3" />
+              <span>{formatRelativeTime(post.created_at)}</span>
+              <span>•</span>
+              <span className="text-zinc-500 font-medium">{post.community_name || 'Juja'}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+          {/* Admin 1-tap Hide / Restore button */}
+          {currentUserProfile?.role === 'admin' && onToggleHidePost && (
+            <button
+              type="button"
+              onClick={() => onToggleHidePost(post.id, post.status === 'hidden' ? 'hidden' : 'live')}
+              className={`cursor-pointer inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border transition-colors ${
+                post.status === 'hidden'
+                  ? 'bg-emerald-100 text-emerald-900 border-emerald-300 hover:bg-emerald-200'
+                  : 'bg-white border-stone-200 text-stone-600 hover:bg-rose-50 hover:text-rose-900 hover:border-rose-200'
+              }`}
+              title={post.status === 'hidden' ? 'Restore post to feed' : 'Hide post from feed'}
+            >
+              {post.status === 'hidden' ? (
+                <Eye className="w-3 h-3 text-emerald-700" />
+              ) : (
+                <EyeOff className="w-3 h-3 text-rose-700" />
+              )}
+              <span>{post.status === 'hidden' ? 'Restore' : 'Hide'}</span>
+            </button>
+          )}
+
+          {post.status === 'hidden' && (
+            <span className="text-[10px] font-bold text-rose-800 bg-rose-100 px-1.5 py-0.5 rounded border border-rose-300">
+              Hidden
+            </span>
+          )}
+
+          {getPostTypeBadge(post.post_type)}
+          {onSelectPost && (
+            <button
+              type="button"
+              onClick={() => onSelectPost(post)}
+              title="Open full post page"
+              className="w-7 h-7 rounded-lg text-zinc-400 hover:text-emerald-800 hover:bg-emerald-50 flex items-center justify-center transition-colors cursor-pointer"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Post Title (clickable to dedicated page if onSelectPost provided) */}
+      {post.title && (
+        <h3
+          onClick={() => onSelectPost && onSelectPost(post)}
+          className={`font-display text-base font-bold text-zinc-950 leading-snug ${
+            onSelectPost ? 'cursor-pointer hover:text-emerald-900 transition-colors' : ''
+          }`}
+        >
+          {post.title}
+        </h3>
+      )}
+
+      {/* Card Content based on post type */}
+      {post.post_type === 'poll' ? (
+        <PollCardContent
+          postId={post.id}
+          initialPoll={post.poll_data}
+          currentUserProfile={currentUserProfile}
+          onRequireAuth={onRequireAuth}
+          isPinned={isPinned}
+          onTogglePin={onTogglePin}
+        />
+      ) : post.post_type === 'mushene' ? (
+        /* Text-First Punchy Street Story Card Design for Mushene */
+        <div className="relative rounded-2xl bg-gradient-to-br from-rose-50/70 via-stone-50/80 to-amber-50/40 border border-rose-200/90 p-4 sm:p-5 shadow-2xs overflow-hidden">
+          <div className="absolute right-3 -bottom-2 text-rose-200/30 select-none pointer-events-none" aria-hidden="true">
+            <Quote className="w-16 h-16" />
+          </div>
+          <div className="relative z-10 space-y-2">
+            <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-rose-800">
+              <span className="text-sm">🔥</span>
+              <span>Juja Street Mushene</span>
+            </div>
+            <p className="font-display text-sm sm:text-base font-semibold text-stone-900 leading-snug tracking-tight whitespace-pre-line">
+              {isTruncated && !isExpanded ? teaser : post.body}
+            </p>
+            {isTruncated && (
+              <div className="flex items-center gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setIsExpanded(!isExpanded)}
+                  className="cursor-pointer text-xs font-bold text-rose-900 hover:text-rose-950 inline-flex items-center gap-0.5 transition-colors"
+                >
+                  <span>{isExpanded ? 'Show less' : 'Read full mushene'}</span>
+                  {isExpanded ? (
+                    <ChevronUp className="w-3.5 h-3.5" />
+                  ) : (
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  )}
+                </button>
+              </div>
             )}
           </div>
         </div>
+      ) : post.post_type === 'event' ? (
+        /* Structured Event Card Design with Date, Venue & RSVP */
+        <div className="bg-indigo-50/60 border border-indigo-200/80 rounded-2xl p-4 sm:p-4.5 space-y-3">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-indigo-950 font-medium">
+            <div className="inline-flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-xl border border-indigo-200 shadow-2xs font-bold">
+              <Calendar className="w-3.5 h-3.5 text-indigo-700" />
+              <span>{post.event_data?.event_date || 'Upcoming Date'}</span>
+            </div>
+            <div className="inline-flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-xl border border-indigo-200 shadow-2xs font-semibold">
+              <MapPin className="w-3.5 h-3.5 text-rose-600" />
+              <span>{post.event_data?.event_place || 'Juja Campus'}</span>
+            </div>
+          </div>
 
-        {/* 44px minimum touch hitboxes for mobile thumb comfort */}
-        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+          <p className="text-xs sm:text-sm text-stone-800 leading-relaxed whitespace-pre-line font-normal">
+            {isTruncated && !isExpanded ? teaser : post.body}
+          </p>
+
+          {isTruncated && (
+            <div className="flex items-center gap-3 pt-0.5">
+              <button
+                type="button"
+                onClick={() => setIsExpanded(!isExpanded)}
+                className="cursor-pointer text-xs font-semibold text-indigo-800 hover:text-indigo-950 inline-flex items-center gap-0.5 transition-colors"
+              >
+                <span>{isExpanded ? 'Show less' : 'Read more details'}</span>
+                {isExpanded ? (
+                  <ChevronUp className="w-3.5 h-3.5" />
+                ) : (
+                  <ChevronDown className="w-3.5 h-3.5" />
+                )}
+              </button>
+            </div>
+          )}
+
+          <div className="pt-2 border-t border-indigo-100 flex items-center justify-between gap-2">
+            <div className="inline-flex items-center gap-1.5 text-xs text-indigo-900 font-medium">
+              <Users className="w-3.5 h-3.5 text-indigo-600" />
+              <span><strong className="font-bold">{rsvpCount}</strong> attending</span>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleToggleRsvp}
+              className={`cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-2xs ${
+                hasRsvped
+                  ? 'bg-emerald-600 text-white hover:bg-emerald-700 border border-emerald-700'
+                  : 'bg-indigo-900 text-white hover:bg-indigo-950 border border-indigo-950'
+              }`}
+            >
+              {hasRsvped ? (
+                <>
+                  <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                  <span>Going ✓</span>
+                </>
+              ) : (
+                <span>RSVP Now</span>
+              )}
+            </button>
+          </div>
+        </div>
+      ) : (
+        /* Teaser Body with "Read more" / "Show less" Expander for other post types */
+        <div className="text-xs sm:text-sm text-zinc-700 leading-relaxed space-y-1.5">
+          <p className="whitespace-pre-line">
+            {isTruncated && !isExpanded ? teaser : post.body}
+          </p>
+
+          {isTruncated && (
+            <div className="flex items-center gap-3 pt-0.5">
+              <button
+                type="button"
+                onClick={() => setIsExpanded(!isExpanded)}
+                className="cursor-pointer text-xs font-semibold text-emerald-800 hover:text-emerald-950 inline-flex items-center gap-0.5 transition-colors"
+              >
+                <span>{isExpanded ? 'Show less' : 'Read more'}</span>
+                {isExpanded ? (
+                  <ChevronUp className="w-3.5 h-3.5" />
+                ) : (
+                  <ChevronDown className="w-3.5 h-3.5" />
+                )}
+              </button>
+
+              {onSelectPost && (
+                <button
+                  type="button"
+                  onClick={() => onSelectPost(post)}
+                  className="cursor-pointer text-xs text-zinc-500 hover:text-emerald-800 inline-flex items-center gap-1 transition-colors"
+                >
+                  <span>Full post page</span>
+                  <ExternalLink className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Lazy-Loaded Image with aspect preservation */}
+      {post.image_url && (
+        <div
+          onClick={() => onSelectPost && onSelectPost(post)}
+          className={`rounded-xl overflow-hidden border border-stone-200/90 bg-stone-100 max-h-96 w-full ${
+            onSelectPost ? 'cursor-pointer' : ''
+          }`}
+        >
+          <img
+            src={post.image_url}
+            alt={post.title || `${post.post_type} in Juja`}
+            loading="lazy"
+            decoding="async"
+            className="w-full h-auto max-h-96 object-cover transition-opacity duration-300"
+            onError={(e) => {
+              (e.currentTarget.parentElement as HTMLElement).style.display = 'none';
+            }}
+          />
+        </div>
+      )}
+
+      {/* Reactions and Action Bar */}
+      <div className="pt-2 border-t border-stone-100 flex flex-wrap items-center justify-between gap-2.5 text-xs text-zinc-500">
+        {/* Campus Flavored Reactions Bar (Laugh, Ni Kweli, Fire) */}
+        <ReactionsBar
+          postId={post.id}
+          initialCounts={post.reactions_count}
+          currentUserProfile={currentUserProfile}
+          onRequireAuth={onRequireAuth}
+        />
+
+        {/* Right Actions: Comments Toggle & Share */}
+        <div className="flex items-center gap-1.5 sm:gap-2 ml-auto">
+          {/* Comments Toggle Button */}
           <button
             type="button"
-            aria-pressed={Boolean(post.likedByMe)}
-            aria-label={`Like post "${post.title || post.body.slice(0, 28)}"`}
-            onClick={() => onToggleLike(post.id)}
-            className={`min-h-[44px] px-3 rounded-lg inline-flex items-center gap-1.5 text-xs font-medium transition-colors cursor-pointer ${
-              post.likedByMe
-                ? 'text-emerald-800 bg-emerald-50 font-semibold'
-                : 'text-zinc-600 hover:bg-stone-100 hover:text-zinc-900'
+            onClick={() => setShowComments(!showComments)}
+            aria-expanded={showComments}
+            className={`cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium transition-colors border ${
+              showComments
+                ? 'bg-emerald-50 border-emerald-300 text-emerald-900 font-semibold'
+                : 'bg-stone-50/80 border-stone-200/90 text-stone-600 hover:bg-stone-100 hover:border-stone-300'
             }`}
+            title="Comments & Replies"
           >
-            <Heart
-              className={`w-4 h-4 shrink-0 ${post.likedByMe ? 'fill-emerald-700 text-emerald-700' : ''}`}
-              aria-hidden="true"
-            />
-            <span className="tabular-nums">{post.likesCount}</span>
+            <MessageCircle className="w-3.5 h-3.5 text-emerald-800" />
+            <span className="hidden xs:inline">Comments</span>
+            <span className="font-mono text-[11px] bg-white/90 px-1 py-0.2 rounded border border-stone-200/80">
+              {commentsCount}
+            </span>
           </button>
 
+          {/* Share as card Button (1080x1920 WhatsApp Status Card) */}
           <button
             type="button"
-            aria-label={`View replies on "${post.title || post.body.slice(0, 28)}"`}
-            onClick={() => onOpenPost(post.slug)}
-            className="min-h-[44px] px-3 rounded-lg inline-flex items-center gap-1.5 text-xs font-medium text-zinc-600 hover:bg-stone-100 hover:text-zinc-900 transition-colors cursor-pointer"
+            onClick={() => setShareCardModalOpen(true)}
+            className="cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-emerald-950 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 transition-colors shadow-2xs"
+            title="Generate 1080x1920 vertical status card for WhatsApp"
           >
-            <MessageCircle className="w-4 h-4 shrink-0" aria-hidden="true" />
-            <span className="tabular-nums">{post.commentsCount}</span>
+            <Smartphone className="w-3.5 h-3.5 text-emerald-800" />
+            <span className="text-[11px] font-bold">Share as card</span>
           </button>
 
+          {/* Share Button (opens Share modal with WhatsApp, Copy Link & Phone Share) */}
           <button
             type="button"
-            aria-label={`Share "${post.title || post.body.slice(0, 28)}" on WhatsApp`}
-            onClick={() => onShareWhatsApp(post)}
-            className="min-h-[44px] px-3.5 rounded-lg inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-50 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            onClick={() => setShareModalOpen(true)}
+            className="cursor-pointer inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium text-emerald-800 bg-emerald-50/80 border border-emerald-200/80 hover:bg-emerald-100 transition-colors"
+            title="Share via WhatsApp, Copy Link, or Phone"
           >
-            <Share2 className="w-4 h-4 shrink-0" aria-hidden="true" />
-            <span>WhatsApp</span>
+            <Share2 className="w-3.5 h-3.5 text-emerald-700" />
+            <span className="text-[11px] font-semibold">Share</span>
           </button>
+
+          {/* Report Button */}
+          {onReportPost && (
+            <button
+              type="button"
+              onClick={() => onReportPost(post)}
+              className="cursor-pointer inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium text-stone-500 hover:text-rose-700 hover:bg-rose-50 hover:border-rose-200 border border-stone-200/80 transition-colors"
+              title="Report post to moderators"
+            >
+              <Flag className="w-3.5 h-3.5 text-stone-400" />
+              <span className="text-[11px] font-semibold">Report</span>
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Expandable Open Threaded Comments Section */}
+      {showComments && (
+        <CommentsSection
+          postId={post.id}
+          currentUserProfile={currentUserProfile}
+          onRequireAuth={onRequireAuth}
+          onCommentCountChange={(newCount) => setCommentsCount(newCount)}
+          onReportComment={onReportComment}
+        />
+      )}
+
+      {/* Standard Share Modal Dialog */}
+      <ShareModal
+        post={post}
+        isOpen={shareModalOpen}
+        onClose={() => setShareModalOpen(false)}
+      />
+
+      {/* 1080x1920 Vertical Status Card Generator Modal */}
+      <ShareCardModal
+        post={post}
+        isOpen={shareCardModalOpen}
+        onClose={() => setShareCardModalOpen(false)}
+      />
     </article>
   );
-};
+}

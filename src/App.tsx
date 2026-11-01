@@ -1,619 +1,497 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowUpRight, Search, Wifi, X } from 'lucide-react';
-import { AuthModal } from './components/AuthModal';
-import { CommunitiesView } from './components/CommunitiesView';
-import { MobileBottomNav } from './components/MobileBottomNav';
-import { PostCard } from './components/PostCard';
-import { PostReaderView } from './components/PostReaderView';
+import React, { useEffect, useState } from 'react';
 import { TopBar } from './components/TopBar';
-import { WhatsAppShareSheet } from './components/WhatsAppShareSheet';
-import { WritePostModal } from './components/WritePostModal';
-import { JUJA_SPOTS, SEED_COMMUNITIES } from './data/seedData';
-import {
-  filterAndSearchPosts,
-  paginatePosts,
-  parseRoute,
-} from './lib/feedLogic';
-import {
-  fetchCommunities,
-  fetchCommunityRequests,
-  fetchPosts,
-  getInitialLiteMode,
-  getStoredCampusUser,
-  publishPost,
-  saveLiteModePreference,
-  signInCampusUser,
-  signOutCampusUser,
-  submitNewCommunityRequest,
-  togglePostLike,
-} from './lib/storageService';
-import {
-  AppRoute,
-  CampusUser,
-  Community,
-  CommunityRequest,
-  CommunityRequestInput,
-  Post,
-  PostDraftInput,
-  PostType,
-} from './types/laodicean';
+import { SupabaseCard } from './components/SupabaseCard';
+import { AuthModal } from './components/AuthModal';
+import { OnboardingModal } from './components/OnboardingModal';
+import { ProfileCard } from './components/ProfileCard';
+import { FloatingCreateButton } from './components/FloatingCreateButton';
+import { PostComposerModal } from './components/PostComposerModal';
+import { FeedSection } from './components/FeedSection';
+import { PostDetailPage } from './components/PostDetailPage';
+import { ReportModal, ReportTargetInfo } from './components/ReportModal';
+import { AdminDashboardModal } from './components/AdminDashboardModal';
+import { fetchProfile, signOut } from './lib/auth';
+import { supabase } from './lib/supabase';
+import { togglePostStatus } from './lib/moderation';
+import { SEED_JUJA_POSTS } from './lib/posts';
+import { Profile, Post, FeedPost, CommentWithAuthor } from './types';
+import { UserPlus, Sparkles, ShieldCheck, Key, Plus } from 'lucide-react';
 
-const PAGE_SIZE = 5;
+/**
+ * Extracts post ID from current browser location pathname (/p/:id),
+ * hash (#/p/:id), or query string (?p=:id).
+ */
+function parsePostIdFromUrl(): string | null {
+  if (typeof window === 'undefined') return null;
 
-const OPTIONAL_CHIPS: { label: string; value: PostType }[] = [
-  { label: 'Stories', value: PostType.Story },
-  { label: 'Quick Gists', value: PostType.Gist },
-  { label: 'Photos', value: PostType.Photo },
-  { label: 'Notices', value: PostType.Notice },
-];
+  // 1. Pathname format: /p/:id or /post/:id
+  const pathname = window.location.pathname || '';
+  const pathMatch = pathname.match(/^\/(?:p|post)\/([^/]+)/);
+  if (pathMatch && pathMatch[1]) {
+    return decodeURIComponent(pathMatch[1]);
+  }
+
+  // 2. Hash format: #/p/:id or #/post/:id
+  const hash = window.location.hash || '';
+  const hashMatch = hash.match(/^#\/(?:p|post)\/([^/]+)/);
+  if (hashMatch && hashMatch[1]) {
+    return decodeURIComponent(hashMatch[1]);
+  }
+
+  // 3. Query param format: ?p=:id or ?post=:id
+  const searchParams = new URLSearchParams(window.location.search);
+  const qPost = searchParams.get('p') || searchParams.get('post');
+  if (qPost) {
+    return decodeURIComponent(qPost);
+  }
+
+  return null;
+}
 
 export default function App() {
-  const [route, setRoute] = useState<AppRoute>(() =>
-    typeof window !== 'undefined'
-      ? parseRoute(window.location.pathname)
-      : { view: 'feed', communitySlug: null }
-  );
-
-  const [communities, setCommunities] = useState<Community[]>(SEED_COMMUNITIES);
-  const [posts, setPosts] = useState<Post[]>([]);
-  const [requests, setRequests] = useState<CommunityRequest[]>([]);
-  const [loadingFeed, setLoadingFeed] = useState(true);
-
-  // Optional feed filters (never required tabs; all null = full mixed endless scroll)
-  const [activePostType, setActivePostType] = useState<PostType | null>(null);
-  const [activeSpot, setActiveSpot] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [page, setPage] = useState(1);
-
-  // Weak-data saver mode
-  const [liteMode, setLiteMode] = useState<boolean>(() => getInitialLiteMode());
-
-  // User session & dialogs
-  const [currentUser, setCurrentUser] = useState<CampusUser | null>(() =>
-    getStoredCampusUser()
-  );
-  const [composerOpen, setComposerOpen] = useState(false);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [authModalOpen, setAuthModalOpen] = useState(false);
-  const [sharePost, setSharePost] = useState<Post | null>(null);
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [loadingSession, setLoadingSession] = useState(true);
+  const [lastCreatedPost, setLastCreatedPost] = useState<FeedPost | null>(null);
+  const [authPromptMessage, setAuthPromptMessage] = useState<string | null>(null);
 
-  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
+  // Dedicated post routing state
+  const [activePostId, setActivePostId] = useState<string | null>(parsePostIdFromUrl);
+  const [activePost, setActivePost] = useState<FeedPost | null>(null);
 
-  // Initial load from Supabase or local persistence
+  // Moderation & Admin Dashboard state
+  const [reportModalOpen, setReportModalOpen] = useState(false);
+  const [reportTarget, setReportTarget] = useState<ReportTargetInfo | null>(null);
+  const [adminDashboardOpen, setAdminDashboardOpen] = useState(false);
+
+  const handleRequireAuth = (message: string) => {
+    setAuthPromptMessage(message);
+    setAuthModalOpen(true);
+  };
+
+  const handleReportPost = (post: FeedPost) => {
+    setReportTarget({
+      type: 'post',
+      postId: post.id,
+      title: post.title,
+      snippet: post.body.slice(0, 160),
+      authorPersona: post.is_persona ? post.persona_name : null,
+      authorRealName: post.author_real_name,
+    });
+    setReportModalOpen(true);
+  };
+
+  const handleReportComment = (comment: CommentWithAuthor) => {
+    setReportTarget({
+      type: 'comment',
+      commentId: comment.id,
+      postId: comment.post_id,
+      snippet: comment.body.slice(0, 160),
+      authorPersona: comment.is_persona ? comment.persona_name : null,
+      authorRealName: comment.author_real_name,
+    });
+    setReportModalOpen(true);
+  };
+
+  const handleToggleHidePost = async (postId: string, currentStatus?: 'live' | 'hidden') => {
+    const newStatus = currentStatus === 'hidden' ? 'live' : 'hidden';
+    await togglePostStatus(postId, newStatus);
+    if (activePost && activePost.id === postId) {
+      setActivePost((prev) => (prev ? { ...prev, status: newStatus } : null));
+    }
+  };
+
+  // Browser navigation history listener (Back / Forward button support)
+  useEffect(() => {
+    const handleLocationChange = () => {
+      const id = parsePostIdFromUrl();
+      setActivePostId(id);
+      if (!id) {
+        setActivePost(null);
+      }
+    };
+
+    window.addEventListener('popstate', handleLocationChange);
+    window.addEventListener('hashchange', handleLocationChange);
+
+    return () => {
+      window.removeEventListener('popstate', handleLocationChange);
+      window.removeEventListener('hashchange', handleLocationChange);
+    };
+  }, []);
+
+  const handleNavigateToPost = (postOrId: FeedPost | string) => {
+    const id = typeof postOrId === 'string' ? postOrId : postOrId.id;
+    if (typeof postOrId !== 'string') {
+      setActivePost(postOrId);
+    }
+    setActivePostId(id);
+    window.history.pushState({ postId: id }, '', `/p/${encodeURIComponent(id)}`);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleBackToFeed = () => {
+    setActivePostId(null);
+    setActivePost(null);
+    window.history.pushState(null, '', '/');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Supabase Auth listener
   useEffect(() => {
     let mounted = true;
-    Promise.all([fetchCommunities(), fetchPosts(), fetchCommunityRequests()]).then(
-      ([loadedCommunities, loadedPosts, loadedRequests]) => {
-        if (!mounted) return;
-        setCommunities(loadedCommunities);
-        setPosts(loadedPosts);
-        setRequests(loadedRequests);
-        setLoadingFeed(false);
+
+    async function initSession() {
+      if (!supabase) {
+        setLoadingSession(false);
+        return;
       }
-    );
+
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user && mounted) {
+          setCurrentUser(session.user);
+          const userProfile = await fetchProfile(session.user.id, session.user.email);
+          if (mounted) {
+            setProfile(userProfile);
+            // Prompt onboarding if user hasn't set their real display name yet
+            if (!userProfile?.real_name || userProfile.real_name === 'User') {
+              setOnboardingOpen(true);
+            }
+          }
+        }
+      } finally {
+        if (mounted) setLoadingSession(false);
+      }
+    }
+
+    initSession();
+
+    if (supabase) {
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(
+        async (_event, session) => {
+          if (!mounted) return;
+          if (session?.user) {
+            setCurrentUser(session.user);
+            const userProfile = await fetchProfile(session.user.id, session.user.email);
+            if (mounted) {
+              setProfile(userProfile);
+              if (!userProfile?.real_name || userProfile.real_name === 'User') {
+                setOnboardingOpen(true);
+              }
+            }
+          } else {
+            setCurrentUser(null);
+            setProfile(null);
+          }
+        }
+      );
+
+      return () => {
+        mounted = false;
+        subscription.unsubscribe();
+      };
+    }
+
     return () => {
       mounted = false;
     };
   }, []);
 
-  // Browser back/forward button listener
-  useEffect(() => {
-    const handlePopState = () => {
-      setRoute(parseRoute(window.location.pathname));
-    };
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
-
-  const pushPath = useCallback((path: string) => {
-    if (typeof window !== 'undefined' && window.location.pathname !== path) {
-      window.history.pushState({}, '', path);
-    }
-    setRoute(parseRoute(path));
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, []);
-
-  const handleNavigateFeed = useCallback(
-    (communitySlug: string | null, postType: PostType | null = null) => {
-      setActivePostType(postType);
-      setPage(1);
-      pushPath(communitySlug ? `/c/${communitySlug}` : '/');
-    },
-    [pushPath]
-  );
-
-  const handleNavigateCommunities = useCallback(
-    (focusRequestForm = false) => {
-      pushPath(focusRequestForm ? '/request-community' : '/communities');
-    },
-    [pushPath]
-  );
-
-  const handleOpenPost = useCallback(
-    (slug: string) => {
-      pushPath(`/p/${slug}`);
-    },
-    [pushPath]
-  );
-
-  const handleToggleLiteMode = () => {
-    setLiteMode((prev) => {
-      const next = !prev;
-      saveLiteModePreference(next);
-      return next;
-    });
-  };
-
-  // Filtered + paginated feed
-  const filteredPosts = useMemo(() => {
-    const communitySlug = route.view === 'feed' ? route.communitySlug : null;
-    return filterAndSearchPosts(posts, {
-      communitySlug,
-      postType: activePostType,
-      spot: activeSpot,
-      searchQuery,
-    });
-  }, [posts, route, activePostType, activeSpot, searchQuery]);
-
-  const { visiblePosts, hasMore, remainingCount } = useMemo(
-    () => paginatePosts(filteredPosts, page, PAGE_SIZE),
-    [filteredPosts, page]
-  );
-
-  // Endless scroll IntersectionObserver
-  useEffect(() => {
-    if (route.view !== 'feed' || !hasMore) return;
-    const node = loadMoreSentinelRef.current;
-    if (!node || typeof IntersectionObserver === 'undefined') return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting) {
-          setPage((prev) => prev + 1);
-        }
-      },
-      { rootMargin: '220px' }
-    );
-
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [route.view, hasMore, visiblePosts.length]);
-
-  // Keep document title synced with active post or view
-  useEffect(() => {
-    if (route.view === 'post') {
-      const match = posts.find((p) => p.slug === route.postSlug);
-      if (match) {
-        document.title = `${match.title || match.body.slice(0, 44)} — c/${match.communitySlug} · Laodicean`;
-        return;
-      }
-    }
-    if (route.view === 'communities') {
-      document.title = 'Communities & Campus Requests — Laodicean';
-      return;
-    }
-    document.title = 'Laodicean — Community Social Blogging (Juja · JKUAT)';
-  }, [route, posts]);
-
-  const handleToggleLike = async (postId: string) => {
-    const updated = await togglePostLike(postId);
-    setPosts(updated);
-  };
-
-  const handlePublishPost = async (draft: PostDraftInput, author: CampusUser) => {
-    if (!currentUser) {
-      setCurrentUser(author);
-    }
-    const created = await publishPost(draft, author);
-    setPosts((prev) => [created, ...prev]);
-    setActivePostType(null);
-    setActiveSpot(null);
-    setSearchQuery('');
-    setPage(1);
-    pushPath('/');
-  };
-
-  const handleSubmitCommunityRequest = async (input: CommunityRequestInput) => {
-    const created = await submitNewCommunityRequest(input);
-    setRequests((prev) => [created, ...prev]);
-  };
-
-  const handleSignIn = async (input: {
-    name: string;
-    handle: string;
-    course: string;
-    email: string;
-  }) => {
-    const { user, magicLinkSent } = await signInCampusUser(input);
+  const handleAuthSuccess = async (user: any) => {
     setCurrentUser(user);
-    return { magicLinkSent };
+    const userProfile = await fetchProfile(user.id, user.email);
+    setProfile(userProfile);
+    if (!userProfile?.real_name || userProfile.real_name === 'User') {
+      setOnboardingOpen(true);
+    }
   };
 
   const handleSignOut = async () => {
-    await signOutCampusUser();
+    await signOut();
     setCurrentUser(null);
+    setProfile(null);
   };
 
-  const jujaCommunity = communities.find((c) => c.slug === 'juja') ?? SEED_COMMUNITIES[0];
+  const handlePostCreated = (newPost: any) => {
+    // Immediately build a FeedPost item to render into live feed without delay
+    const newFeedItem: FeedPost = {
+      id: newPost.id,
+      community_id: newPost.community_id,
+      community_name: 'Juja',
+      community_slug: 'juja',
+      post_type: newPost.post_type,
+      title: newPost.title,
+      body: newPost.body,
+      image_url: newPost.image_url,
+      is_persona: newPost.is_persona,
+      status: newPost.status,
+      created_at: newPost.created_at || new Date().toISOString(),
+      updated_at: newPost.updated_at || new Date().toISOString(),
+      persona_name: profile?.persona_name || '@juja_student',
+      persona_avatar: profile?.persona_avatar || '🎓',
+      author_id: profile?.id || null,
+      author_real_name: profile?.real_name || null,
+      author_role: profile?.role || 'user',
+      reactions_count: { laugh: 0, relatable: 0, fire: 0, total: 0 },
+      comments_count: 0,
+      poll_data: newPost.poll_data || null,
+    };
 
-  const postCountByCommunity = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const p of posts) {
-      counts[p.communitySlug] = (counts[p.communitySlug] ?? 0) + 1;
-    }
-    return counts;
-  }, [posts]);
-
-  const activeReaderPost =
-    route.view === 'post'
-      ? posts.find((p) => p.slug === route.postSlug)
-      : undefined;
+    setLastCreatedPost(newFeedItem);
+    // Take user to dedicated view of their new post with share options
+    handleNavigateToPost(newFeedItem);
+  };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#FAF9F6] text-zinc-900">
+    <div className="min-h-screen flex flex-col bg-[#FAF9F6] text-zinc-900 pb-20">
+      {/* Top Bar with brand and user session */}
       <TopBar
-        route={route}
-        activePostType={activePostType}
-        currentUser={currentUser}
-        onNavigateFeed={handleNavigateFeed}
-        onNavigateCommunities={handleNavigateCommunities}
-        onOpenComposer={() => setComposerOpen(true)}
+        profile={profile}
+        userEmail={currentUser?.email}
         onOpenAuth={() => setAuthModalOpen(true)}
+        onOpenProfile={() => setOnboardingOpen(true)}
+        onNavigateHome={handleBackToFeed}
+        onOpenAdmin={() => setAdminDashboardOpen(true)}
       />
 
-      <main className="flex-1 w-full max-w-6xl mx-auto px-4 sm:px-6 pt-5 sm:pt-8 pb-20 md:pb-12">
-        {route.view === 'post' ? (
-          <PostReaderView
-            post={activeReaderPost}
-            liteMode={liteMode}
-            currentUser={currentUser}
-            onBackToFeed={() => handleNavigateFeed(null, null)}
-            onToggleLike={handleToggleLike}
-            onPostsUpdated={setPosts}
-            onRequireAuthOrQuickName={(guestUser) => setCurrentUser(guestUser)}
-          />
-        ) : route.view === 'communities' ? (
-          <CommunitiesView
-            communities={communities}
-            requests={requests}
-            postCountByCommunity={postCountByCommunity}
-            focusRequestForm={route.focusRequestForm}
-            onOpenCommunityFeed={(slug) => handleNavigateFeed(slug, null)}
-            onSubmitRequest={handleSubmitCommunityRequest}
+      {/* Main mobile-first container */}
+      <main className="flex-1 w-full max-w-md md:max-w-xl mx-auto px-4 py-6 space-y-6">
+        {activePostId ? (
+          /* Dedicated Post View with its own URL, meta tags, and open discussion */
+          <PostDetailPage
+            postId={activePostId}
+            initialPost={activePost}
+            currentUserProfile={profile}
+            onBack={handleBackToFeed}
+            onNavigateToPost={handleNavigateToPost}
+            onRequireAuth={handleRequireAuth}
+            onReportPost={handleReportPost}
+            onReportComment={handleReportComment}
           />
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-            {/* Main Endless-Scroll Feed Column (8 cols on desktop) */}
-            <div className="lg:col-span-8 space-y-5">
-              {/* Clean Editorial Feed Header */}
-              <div className="space-y-1.5">
-                <div className="flex flex-wrap items-center gap-x-2 text-xs text-zinc-500">
-                  <span className="font-semibold text-emerald-800">c/juja</span>
-                  <span aria-hidden="true">·</span>
-                  <span>JKUAT Main Campus, Kenya</span>
-                  <span aria-hidden="true">·</span>
-                  <span className="tabular-nums">
-                    {jujaCommunity.memberCount.toLocaleString()} readers
-                  </span>
-                </div>
-                <h1 className="font-display text-2xl sm:text-3xl font-bold text-zinc-950 tracking-tight text-balance">
-                  What Juja is writing & sharing today
-                </h1>
+          /* Standard Juja Campus Feed & Community Hub */
+          <>
+            {/* Intro */}
+            <section className="space-y-1.5">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-800">
+                <Sparkles className="w-4 h-4" aria-hidden="true" />
+                <span>Juja Campus Community Hub</span>
               </div>
+              <h1 className="font-display text-2xl font-bold tracking-tight text-zinc-950">
+                Laodicean
+              </h1>
+              <p className="text-xs sm:text-sm text-zinc-600 leading-relaxed">
+                Campus stories, photos, and mushene from Juja (JKUAT). Post with your verified name or anonymously through your campus persona.
+              </p>
+            </section>
 
-              {/* Optional Filter Chips + Search + Lite Data Saver Bar */}
-              <div className="space-y-3 pt-1">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                  {/* Optional filter chips (never required tabs; clicking active chip resets to mixed stream) */}
-                  <div
-                    role="group"
-                    aria-label="Optional post type filters"
-                    className="flex flex-wrap items-center gap-1.5"
-                  >
-                    <button
-                      type="button"
-                      aria-pressed={activePostType === null}
-                      onClick={() => {
-                        setActivePostType(null);
-                        setPage(1);
-                      }}
-                      className={`min-h-[40px] px-3 sm:px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                        activePostType === null
-                          ? 'bg-zinc-900 text-white'
-                          : 'bg-stone-200/75 text-zinc-700 hover:bg-stone-200 hover:text-zinc-950'
-                      }`}
-                    >
-                      All Mix
-                    </button>
-
-                    {OPTIONAL_CHIPS.map((chip) => {
-                      const isSelected = activePostType === chip.value;
-                      return (
-                        <button
-                          key={chip.value}
-                          type="button"
-                          aria-pressed={isSelected}
-                          onClick={() => {
-                            setActivePostType(isSelected ? null : chip.value);
-                            setPage(1);
-                          }}
-                          className={`min-h-[40px] px-3 sm:px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                            isSelected
-                              ? 'bg-zinc-900 text-white'
-                              : 'bg-stone-200/75 text-zinc-700 hover:bg-stone-200 hover:text-zinc-950'
-                          }`}
-                        >
-                          {chip.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* Weak-data saver toggle */}
-                  <button
-                    type="button"
-                    aria-pressed={liteMode}
-                    onClick={handleToggleLiteMode}
-                    className={`min-h-[40px] px-3 py-1.5 rounded-lg border text-xs font-semibold inline-flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 self-start sm:self-auto cursor-pointer ${
-                      liteMode
-                        ? 'bg-emerald-50 border-emerald-700 text-emerald-900'
-                        : 'bg-white border-stone-300 text-zinc-700 hover:border-zinc-900'
-                    }`}
-                  >
-                    <Wifi className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                    <span>{liteMode ? 'Lite Data: On' : 'Lite Data: Off'}</span>
-                  </button>
+            {/* Quick Post Prompt Bar */}
+            <div className="bg-white border border-stone-200/90 rounded-2xl p-3.5 shadow-xs flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 rounded-full bg-emerald-100/70 text-emerald-800 flex items-center justify-center text-sm shrink-0 border border-emerald-200">
+                  {profile?.persona_avatar || '🎓'}
                 </div>
-
-                {/* Search + Active Spot Reset */}
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="relative flex-1 min-w-[200px]">
-                    <label htmlFor="feed-search-input" className="sr-only">
-                      Search posts in Juja
-                    </label>
-                    <Search
-                      className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none"
-                      aria-hidden="true"
-                    />
-                    <input
-                      id="feed-search-input"
-                      type="search"
-                      value={searchQuery}
-                      onChange={(e) => {
-                        setSearchQuery(e.target.value);
-                        setPage(1);
-                      }}
-                      placeholder="Search Gate C, hostels, labs, notes..."
-                      className="w-full h-10 pl-9 pr-3 rounded-lg bg-white border border-stone-200/90 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:border-emerald-800"
-                    />
-                  </div>
-
-                  {activeSpot && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveSpot(null);
-                        setPage(1);
-                      }}
-                      className="min-h-[40px] px-3 rounded-lg bg-stone-200/80 hover:bg-stone-300/70 text-xs font-semibold text-zinc-900 inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
-                    >
-                      <span>Spot: {activeSpot}</span>
-                      <X className="w-3.5 h-3.5" aria-hidden="true" />
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Endless Scroll Post List */}
-              {loadingFeed ? (
-                <div className="py-12 text-center text-sm text-zinc-500">
-                  Loading Juja stream…
-                </div>
-              ) : visiblePosts.length === 0 ? (
-                <div className="bg-white border border-stone-200/90 rounded-2xl p-8 text-center space-y-3">
-                  <p className="font-display text-lg font-bold text-zinc-900">
-                    No posts match that filter yet
-                  </p>
-                  <p className="text-sm text-zinc-600 max-w-md mx-auto">
-                    Clear your filter to return to the full mixed stream, or publish
-                    the first post on this topic.
-                  </p>
-                  <div className="pt-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActivePostType(null);
-                        setActiveSpot(null);
-                        setSearchQuery('');
-                        setPage(1);
-                      }}
-                      className="min-h-[44px] px-4 py-2 rounded-lg bg-zinc-900 text-white text-xs font-semibold cursor-pointer"
-                    >
-                      Reset Filters
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {visiblePosts.map((post) => (
-                    <PostCard
-                      key={post.id}
-                      post={post}
-                      liteMode={liteMode}
-                      onOpenPost={handleOpenPost}
-                      onToggleLike={handleToggleLike}
-                      onShareWhatsApp={(target) => setSharePost(target)}
-                      onFilterBySpot={(spot) => {
-                        setActiveSpot((prev) => (prev === spot ? null : spot));
-                        setPage(1);
-                      }}
-                    />
-                  ))}
-
-                  {/* Progressive Endless Scroll Trigger + Accessible Load More Button */}
-                  <div ref={loadMoreSentinelRef} className="pt-2 text-center">
-                    {hasMore ? (
-                      <button
-                        type="button"
-                        onClick={() => setPage((prev) => prev + 1)}
-                        className="min-h-[44px] px-5 py-2.5 rounded-xl bg-white border border-stone-300 hover:border-zinc-900 text-xs font-semibold text-zinc-800 transition-colors tabular-nums cursor-pointer"
-                      >
-                        Load older posts ({remainingCount} more)
-                      </button>
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-zinc-900 truncate">
+                    {profile ? (
+                      <>Ready to post in Juja, {profile.real_name}?</>
                     ) : (
-                      <p className="text-xs text-zinc-500 py-3">
-                        You are caught up with the latest dispatches from c/juja.
-                      </p>
+                      <>Have something to share in Juja?</>
                     )}
-                  </div>
+                  </p>
+                  <p className="text-[11px] text-zinc-500 truncate">
+                    {profile?.persona_name ? (
+                      <>Post as {profile.real_name} or {profile.persona_name}</>
+                    ) : (
+                      <>Tap to compose a Story or Photo</>
+                    )}
+                  </p>
                 </div>
-              )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (profile) {
+                    setComposerOpen(true);
+                  } else {
+                    setAuthModalOpen(true);
+                  }
+                }}
+                className="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 shadow-xs"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Create</span>
+              </button>
             </div>
 
-            {/* Desktop Context Rail (4 cols on lg+, zero nested boxes) */}
-            <aside
-              aria-label="Community context"
-              className="hidden lg:block lg:col-span-4 space-y-6 sticky top-22"
-            >
-              {/* Active Flagship Community Card */}
-              <div className="bg-white border border-stone-200/90 rounded-2xl overflow-hidden">
-                {jujaCommunity.bannerUrl && !liteMode && (
-                  <div className="aspect-[16/9] w-full bg-stone-100 overflow-hidden">
-                    <img
-                      src={jujaCommunity.bannerUrl}
-                      alt="Students walking along sunlit brick lecture halls in Juja"
-                      referrerPolicy="no-referrer"
-                      loading="lazy"
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                )}
-                <div className="p-5 space-y-3">
-                  <div className="text-xs text-zinc-500">
-                    <span className="font-semibold text-zinc-900">First Community</span>
-                    <span aria-hidden="true"> · </span>
-                    <span>{jujaCommunity.region}</span>
-                  </div>
-                  <h2 className="font-display text-lg font-bold text-zinc-950">
-                    c/{jujaCommunity.slug} — JKUAT Campus
-                  </h2>
-                  <p className="text-xs text-zinc-600 leading-relaxed">
-                    {jujaCommunity.description}
-                  </p>
-                </div>
-              </div>
+            {/* Live Posts Feed */}
+            <FeedSection
+              newlyCreatedPost={lastCreatedPost}
+              currentUserProfile={profile}
+              onRequireAuth={handleRequireAuth}
+              onSelectPost={handleNavigateToPost}
+              onReportPost={handleReportPost}
+              onReportComment={handleReportComment}
+              onToggleHidePost={handleToggleHidePost}
+              onOpenComposer={() => {
+                if (profile) {
+                  setComposerOpen(true);
+                } else {
+                  handleRequireAuth('Sign in with your campus account to create a post!');
+                }
+              }}
+            />
+          </>
+        )}
 
-              {/* Popular Juja Spots Filter */}
-              <div className="space-y-2.5 px-1">
-                <h2 className="font-display text-sm font-bold text-zinc-900">
-                  Filter by Juja spot
+        {/* Authentication Card (if logged in, show ProfileCard; if logged out, show CTA) */}
+        {loadingSession ? (
+          <div className="p-6 text-center text-xs text-zinc-500 bg-white border border-stone-200/90 rounded-2xl animate-pulse">
+            Checking session...
+          </div>
+        ) : profile ? (
+          <ProfileCard
+            profile={profile}
+            userEmail={currentUser?.email}
+            onEditPersona={() => setOnboardingOpen(true)}
+            onSignOut={handleSignOut}
+          />
+        ) : (
+          <div className="bg-white border border-stone-200/90 rounded-2xl p-5 sm:p-6 shadow-xs space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="font-display text-lg font-bold text-zinc-950">
+                  Campus Member Account
                 </h2>
-                <div className="flex flex-wrap gap-1.5">
-                  {JUJA_SPOTS.map((spot) => {
-                    const selected = activeSpot === spot;
-                    return (
-                      <button
-                        key={spot}
-                        type="button"
-                        aria-pressed={selected}
-                        onClick={() => {
-                          setActiveSpot(selected ? null : spot);
-                          setPage(1);
-                        }}
-                        className={`min-h-[36px] px-3 py-1 rounded-lg text-xs font-medium transition-colors whitespace-nowrap cursor-pointer ${
-                          selected
-                            ? 'bg-zinc-900 text-white'
-                            : 'bg-stone-200/70 text-zinc-700 hover:bg-stone-200 hover:text-zinc-950'
-                        }`}
-                      >
-                        {spot}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Laodicean Umbrella — Request a Community */}
-              <div className="pt-4 border-t border-stone-200/90 px-1 space-y-2">
-                <h2 className="font-display text-sm font-bold text-zinc-900">
-                  Outside Juja?
-                </h2>
-                <p className="text-xs text-zinc-600 leading-relaxed">
-                  Laodicean hosts independent campus and neighborhood communities.
-                  Request the next one for your university or town.
+                <p className="text-xs text-zinc-500">
+                  Sign in to publish posts, choose personas, and participate.
                 </p>
-                <a
-                  href="/request-community"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    handleNavigateCommunities(true);
-                  }}
-                  className="min-h-[40px] inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-800 hover:underline"
-                >
-                  <span>Request your community</span>
-                  <ArrowUpRight className="w-3.5 h-3.5" aria-hidden="true" />
-                </a>
               </div>
-            </aside>
+              <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-800 flex items-center justify-center shrink-0">
+                <UserPlus className="w-5 h-5" aria-hidden="true" />
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-stone-50 border border-stone-200/80 text-xs text-zinc-600 space-y-1">
+              <p className="font-semibold text-zinc-800">
+                Dual Identity System:
+              </p>
+              <ul className="list-disc list-inside space-y-0.5 text-zinc-600 text-[11px]">
+                <li><strong className="text-zinc-800">Real Name:</strong> For verified announcements and guides.</li>
+                <li><strong className="text-zinc-800">Persona:</strong> For anonymous confessions, memes, and mushene.</li>
+              </ul>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setAuthModalOpen(true)}
+              className="w-full min-h-[44px] px-4 py-2.5 rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-semibold inline-flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-xs"
+            >
+              <UserPlus className="w-4 h-4" aria-hidden="true" />
+              <span>Sign Up or Log In</span>
+            </button>
           </div>
         )}
+
+        {/* Database & Supabase Status */}
+        <SupabaseCard />
+
+        {/* Admin and Google OAuth Configuration Guidance */}
+        <section aria-labelledby="oauth-guide-heading" className="bg-white border border-stone-200/90 rounded-2xl p-5 space-y-3.5">
+          <h2 id="oauth-guide-heading" className="font-display text-base font-bold text-zinc-950 flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-emerald-800" aria-hidden="true" />
+            <span>Admin & Storage Setup</span>
+          </h2>
+
+          <div className="space-y-3 text-xs text-zinc-600 leading-relaxed">
+            <div className="p-3 rounded-xl bg-emerald-50/70 border border-emerald-200/60 text-emerald-950 space-y-0.5">
+              <p className="font-bold flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-emerald-700" />
+                <span>Admin Privileges</span>
+              </p>
+              <p className="text-[11px] text-emerald-900">
+                Signing in with <strong className="font-mono">pauljubilee50@gmail.com</strong> automatically grants full <strong className="font-bold">admin</strong> status, allowing you to unmask persona identities and manage communities.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <p className="font-semibold text-zinc-900 flex items-center gap-1">
+                <Key className="w-3.5 h-3.5 text-zinc-600" />
+                <span>Supabase Storage Bucket Setup:</span>
+              </p>
+              <ol className="list-decimal list-inside space-y-1 text-[11px] text-zinc-600 pl-1">
+                <li>Go to your Supabase Dashboard → <strong>Storage</strong>.</li>
+                <li>Click <strong>New Bucket</strong>, name it <strong className="font-mono">posts</strong>, and toggle <strong>Public bucket</strong> to ON.</li>
+                <li>Photos will automatically compress on weak campus networks and upload directly to this bucket.</li>
+              </ol>
+            </div>
+          </div>
+        </section>
       </main>
 
-      {/* Quiet Editorial Footer */}
-      <footer className="hidden md:block border-t border-stone-200/80 py-6 text-xs text-zinc-500">
-        <div className="max-w-6xl mx-auto px-6 flex items-center justify-between gap-4">
-          <span>Laodicean · laodicean.online · Starting in Juja (JKUAT)</span>
-          <div className="flex items-center gap-5">
-            <a
-              href="/communities"
-              onClick={(e) => {
-                e.preventDefault();
-                handleNavigateCommunities(false);
-              }}
-              className="hover:text-zinc-900 transition-colors"
-            >
-              Communities
-            </a>
-            <a
-              href="/request-community"
-              onClick={(e) => {
-                e.preventDefault();
-                handleNavigateCommunities(true);
-              }}
-              className="hover:text-zinc-900 transition-colors"
-            >
-              Request a Community
-            </a>
-          </div>
-        </div>
-      </footer>
-
-      <MobileBottomNav
-        route={route}
-        currentUser={currentUser}
-        onNavigateFeed={() => handleNavigateFeed(null, null)}
+      {/* Floating Action Button for Post Creation */}
+      <FloatingCreateButton
         onOpenComposer={() => setComposerOpen(true)}
-        onNavigateCommunities={() => handleNavigateCommunities(false)}
-        onOpenAuth={() => setAuthModalOpen(true)}
       />
 
-      <WritePostModal
+      {/* Post Composer Modal */}
+      <PostComposerModal
         isOpen={composerOpen}
-        currentUser={currentUser}
+        profile={profile}
         onClose={() => setComposerOpen(false)}
-        onPublish={handlePublishPost}
+        onPostCreated={handlePostCreated}
+        onRequestAuth={() => setAuthModalOpen(true)}
+        onRequestCreatePersona={() => {
+          setComposerOpen(false);
+          setOnboardingOpen(true);
+        }}
       />
 
-      <WhatsAppShareSheet
-        post={sharePost}
-        onClose={() => setSharePost(null)}
-      />
-
+      {/* Auth Modal */}
       <AuthModal
         isOpen={authModalOpen}
-        currentUser={currentUser}
-        onClose={() => setAuthModalOpen(false)}
-        onSignIn={handleSignIn}
-        onSignOut={handleSignOut}
+        promptMessage={authPromptMessage}
+        onClose={() => {
+          setAuthModalOpen(false);
+          setAuthPromptMessage(null);
+        }}
+        onAuthSuccess={handleAuthSuccess}
+      />
+
+      {/* Onboarding & Edit Persona Modal */}
+      {profile && (
+        <OnboardingModal
+          profile={profile}
+          isOpen={onboardingOpen}
+          onClose={() => setOnboardingOpen(false)}
+          onProfileUpdated={(updated) => setProfile(updated)}
+        />
+      )}
+
+      {/* Report Modal */}
+      <ReportModal
+        isOpen={reportModalOpen}
+        target={reportTarget}
+        reporterId={profile?.id || 'guest_user'}
+        onClose={() => {
+          setReportModalOpen(false);
+          setReportTarget(null);
+        }}
+      />
+
+      {/* Admin Dashboard Modal */}
+      <AdminDashboardModal
+        isOpen={adminDashboardOpen}
+        currentUserProfile={profile}
+        posts={lastCreatedPost ? [lastCreatedPost, ...SEED_JUJA_POSTS] : SEED_JUJA_POSTS}
+        onClose={() => setAdminDashboardOpen(false)}
+        onPostStatusChange={handleToggleHidePost}
+        onNavigateToPost={handleNavigateToPost}
       />
     </div>
   );

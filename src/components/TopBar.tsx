@@ -1,115 +1,98 @@
 import React from 'react';
-import { PenLine } from 'lucide-react';
-import { AppRoute, CampusUser, PostType } from '../types/laodicean';
+import { User, Sparkles, ShieldAlert } from 'lucide-react';
+import { Profile } from '../types';
 
 interface TopBarProps {
-  route: AppRoute;
-  activePostType: PostType | null;
-  currentUser: CampusUser | null;
-  onNavigateFeed: (communitySlug: string | null, postType?: PostType | null) => void;
-  onNavigateCommunities: (focusRequestForm?: boolean) => void;
-  onOpenComposer: () => void;
+  profile: Profile | null;
+  userEmail?: string | null;
   onOpenAuth: () => void;
+  onOpenProfile: () => void;
+  onNavigateHome?: () => void;
+  onOpenAdmin?: () => void;
 }
 
 /**
- * Top navigation bar following the strict 3-zone Top Bar Contract on desktop
- * and a compact <=48px header on mobile to stay well within the 15% sticky height budget.
+ * TopBar component for Laodicean.
+ * Mobile-first header displaying the brand and user session state.
  */
 export const TopBar: React.FC<TopBarProps> = ({
-  route,
-  activePostType,
-  currentUser,
-  onNavigateFeed,
-  onNavigateCommunities,
-  onOpenComposer,
+  profile,
+  userEmail,
   onOpenAuth,
+  onOpenProfile,
+  onNavigateHome,
+  onOpenAdmin,
 }) => {
-  const isFeedActive = route.view === 'feed' && activePostType === null;
-  const isStoriesActive = route.view === 'feed' && activePostType === PostType.Story;
-  const isCommunitiesActive = route.view === 'communities';
-
+  const isAdmin =
+    profile?.role === 'admin' ||
+    userEmail === 'pauljubilee50@gmail.com';
   return (
-    <header className="sticky top-0 z-30 h-12 md:h-16 bg-[#FAF9F6]/92 backdrop-blur-md border-b border-stone-200/90">
-      <div className="max-w-6xl mx-auto h-full px-4 sm:px-6 flex items-center justify-between gap-8">
-        {/* Zone 1: Single text element wordmark */}
-        <a
-          href="/"
-          onClick={(e) => {
-            e.preventDefault();
-            onNavigateFeed(null, null);
-          }}
-          className="font-display text-xl md:text-2xl font-bold tracking-tight text-zinc-900 whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-emerald-800 rounded-sm"
-        >
-          Laodicean
-        </a>
+    <header className="sticky top-0 z-30 w-full bg-[#FAF9F6]/95 backdrop-blur-md border-b border-stone-200">
+      <div className="max-w-md md:max-w-xl mx-auto h-14 px-4 flex items-center justify-between">
+        {/* Brand Zone */}
+        <div className="flex items-center gap-2">
+          <a
+            href="/"
+            onClick={(e) => {
+              if (onNavigateHome) {
+                e.preventDefault();
+                onNavigateHome();
+              }
+            }}
+            className="font-display text-2xl font-bold tracking-tight text-zinc-950 focus-visible:outline-2 focus-visible:outline-emerald-800 rounded-sm cursor-pointer hover:text-emerald-950 transition-colors"
+          >
+            Laodicean
+          </a>
+          <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full">
+            Juja
+          </span>
+        </div>
 
-        {/* Zone 2: 4 concise single-line navigation links on desktop */}
-        <nav
-          aria-label="Primary navigation"
-          className="hidden md:flex items-center gap-7 text-sm font-medium text-zinc-600"
-        >
-          <a
-            href="/c/juja"
-            onClick={(e) => {
-              e.preventDefault();
-              onNavigateFeed('juja', null);
-            }}
-            className={`py-1 whitespace-nowrap shrink-0 transition-colors border-b-2 ${
-              isFeedActive
-                ? 'text-zinc-950 border-emerald-700'
-                : 'border-transparent hover:text-zinc-950 hover:border-stone-300'
-            }`}
-          >
-            Juja Feed
-          </a>
-          <a
-            href="/c/juja"
-            onClick={(e) => {
-              e.preventDefault();
-              onNavigateFeed('juja', PostType.Story);
-            }}
-            className={`py-1 whitespace-nowrap shrink-0 transition-colors border-b-2 ${
-              isStoriesActive
-                ? 'text-zinc-950 border-emerald-700'
-                : 'border-transparent hover:text-zinc-950 hover:border-stone-300'
-            }`}
-          >
-            Stories
-          </a>
-          <a
-            href="/communities"
-            onClick={(e) => {
-              e.preventDefault();
-              onNavigateCommunities(false);
-            }}
-            className={`py-1 whitespace-nowrap shrink-0 transition-colors border-b-2 ${
-              isCommunitiesActive
-                ? 'text-zinc-950 border-emerald-700'
-                : 'border-transparent hover:text-zinc-950 hover:border-stone-300'
-            }`}
-          >
-            Communities
-          </a>
-          <button
-            type="button"
-            onClick={onOpenAuth}
-            className="py-1 whitespace-nowrap shrink-0 text-zinc-600 hover:text-zinc-950 transition-colors cursor-pointer"
-          >
-            {currentUser ? currentUser.handle : 'Sign In'}
-          </button>
-        </nav>
+        {/* User Session & Admin Action */}
+        <div className="flex items-center gap-2">
+          {isAdmin && onOpenAdmin && (
+            <button
+              type="button"
+              onClick={onOpenAdmin}
+              className="cursor-pointer min-h-[38px] px-2.5 py-1 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 text-xs font-bold inline-flex items-center gap-1.5 transition-colors shadow-2xs"
+              title="Open Admin Moderation Deck & Persona Reveal"
+            >
+              <ShieldAlert className="w-3.5 h-3.5 text-amber-700" />
+              <span>Admin Deck</span>
+            </button>
+          )}
 
-        {/* Zone 3: 1 primary CTA action */}
-        <div className="flex items-center shrink-0">
-          <button
-            type="button"
-            onClick={onOpenComposer}
-            className="min-h-[40px] md:min-h-[40px] px-4 py-2 rounded-lg bg-emerald-800 hover:bg-emerald-900 active:scale-[0.98] text-white text-xs sm:text-sm font-semibold inline-flex items-center gap-2 transition-all whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-800"
-          >
-            <PenLine className="w-4 h-4 shrink-0" aria-hidden="true" />
-            <span>Write Post</span>
-          </button>
+          {profile ? (
+            <button
+              type="button"
+              onClick={onOpenProfile}
+              className="min-h-[44px] flex items-center gap-2 px-2.5 py-1 rounded-xl hover:bg-stone-200/60 transition-colors cursor-pointer group"
+            >
+              <div className="w-8 h-8 rounded-full bg-emerald-100/80 border border-emerald-300 flex items-center justify-center text-sm shadow-2xs">
+                {profile.persona_avatar || '🎓'}
+              </div>
+              <div className="text-left hidden sm:block leading-tight">
+                <span className="block text-xs font-bold text-zinc-900 group-hover:text-emerald-900">
+                  {profile.persona_name}
+                </span>
+                {profile.role === 'admin' && (
+                  <span className="text-[10px] font-bold text-amber-700 inline-flex items-center gap-0.5">
+                    <Sparkles className="w-2.5 h-2.5" />
+                    Admin
+                  </span>
+                )}
+              </div>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onOpenAuth}
+              className="min-h-[44px] px-3.5 py-1.5 rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+            >
+              <User className="w-3.5 h-3.5" aria-hidden="true" />
+              <span>Sign In</span>
+            </button>
+          )}
         </div>
       </div>
     </header>

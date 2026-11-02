@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   X,
   FileText,
@@ -17,6 +17,7 @@ import {
   Plus,
   Calendar,
   MapPin,
+  HelpCircle,
 } from 'lucide-react';
 import { Profile, PostType, Post } from '../types';
 import {
@@ -27,6 +28,7 @@ import {
 } from '../lib/imageCompression';
 import { createPost, validatePostInput } from '../lib/posts';
 import { validatePollInput, savePollToDatabase } from '../lib/polls';
+import { MemeEditorModal } from './MemeEditorModal';
 
 interface PostComposerModalProps {
   isOpen: boolean;
@@ -35,6 +37,8 @@ interface PostComposerModalProps {
   onPostCreated: (post: Post) => void;
   onRequestCreatePersona: () => void;
   onRequestAuth?: () => void;
+  initialPostType?: PostType;
+  initialMemeResult?: { file: File; previewUrl: string; caption: string } | null;
 }
 
 export function PostComposerModal({
@@ -44,13 +48,43 @@ export function PostComposerModal({
   onPostCreated,
   onRequestCreatePersona,
   onRequestAuth,
+  initialPostType,
+  initialMemeResult,
 }: PostComposerModalProps) {
-  const [postType, setPostType] = useState<'story' | 'mushene' | 'event' | 'poll' | 'confession' | 'photo'>('story');
+  const [postType, setPostType] = useState<PostType>(initialPostType || 'story');
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [eventDate, setEventDate] = useState('');
   const [eventPlace, setEventPlace] = useState('');
   const [pollOptions, setPollOptions] = useState<string[]>(['', '']);
+  const [memeModalOpen, setMemeModalOpen] = useState(false);
+
+  useEffect(() => {
+    if (initialPostType && isOpen) {
+      setPostType(initialPostType);
+    }
+  }, [initialPostType, isOpen]);
+
+  useEffect(() => {
+    if (initialMemeResult && isOpen) {
+      setCompressedResult({
+        file: initialMemeResult.file,
+        blob: initialMemeResult.file,
+        previewUrl: initialMemeResult.previewUrl,
+        originalSizeBytes: initialMemeResult.file.size,
+        compressedSizeBytes: initialMemeResult.file.size,
+        savingsPercent: 0,
+        width: 800,
+        height: 800,
+        mimeType: 'image/png',
+      });
+      setPostType('meme');
+      if (initialMemeResult.caption) {
+        setBody(initialMemeResult.caption);
+        setTitle((prev) => prev || initialMemeResult.caption.slice(0, 80));
+      }
+    }
+  }, [initialMemeResult, isOpen]);
 
   // Persona posting toggle - strictly available only if user has a persona
   const hasPersona = Boolean(profile?.persona_name && profile.persona_name.trim().length > 0);
@@ -222,6 +256,8 @@ export function PostComposerModal({
         body: body.trim(),
         imageUrl: finalImageUrl,
         isPersona: isPostPersona,
+        authorRole: profile.role,
+        requiresReview: profile.role === 'guest_blogger',
         eventData:
           postType === 'event'
             ? {
@@ -326,12 +362,12 @@ export function PostComposerModal({
             </div>
           )}
 
-          {/* Post Type Selector (Story, Mushene, Event, Poll, Confession, Photo) */}
+          {/* Post Type Selector (Story, Mushene, Event, Poll, Confession, Meme, Photo, Ask Juja) */}
           <div className="space-y-1.5">
             <label className="text-[11px] font-semibold tracking-wide uppercase text-zinc-500">
               Post Type
             </label>
-            <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+            <div className="grid grid-cols-2 xs:grid-cols-4 sm:grid-cols-4 md:grid-cols-8 gap-1.5 sm:gap-2">
               <button
                 type="button"
                 onClick={() => setPostType('story')}
@@ -402,6 +438,37 @@ export function PostComposerModal({
 
               <button
                 type="button"
+                onClick={() => {
+                  setPostType('meme');
+                  if (!compressedResult) {
+                    setMemeModalOpen(true);
+                  }
+                }}
+                className={`flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 py-2.5 px-2 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+                  postType === 'meme'
+                    ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
+                    : 'bg-white text-zinc-700 border-stone-200 hover:bg-amber-50 hover:text-amber-950 hover:border-amber-300'
+                }`}
+              >
+                <span>😂</span>
+                <span>Meme</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPostType('ask_juja')}
+                className={`flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 py-2.5 px-2 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+                  postType === 'ask_juja'
+                    ? 'bg-cyan-700 text-white border-cyan-700 shadow-xs'
+                    : 'bg-white text-zinc-700 border-stone-200 hover:bg-cyan-50 hover:text-cyan-950 hover:border-cyan-300'
+                }`}
+              >
+                <HelpCircle className="w-3.5 h-3.5" />
+                <span>Ask Juja</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setPostType('photo')}
                 className={`flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 py-2.5 px-2 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
                   postType === 'photo'
@@ -414,6 +481,67 @@ export function PostComposerModal({
               </button>
             </div>
           </div>
+
+          {/* Ask Juja Explainer Banner */}
+          {postType === 'ask_juja' && (
+            <div className="p-3.5 rounded-2xl border border-cyan-200 bg-cyan-50/70 space-y-1">
+              <h4 className="text-xs font-bold text-cyan-950 flex items-center gap-1.5">
+                <span>❓ Ask Juja Campus Community</span>
+              </h4>
+              <p className="text-[11px] text-cyan-900 leading-relaxed">
+                Need answers about hostel rent, CAT venues, units, WiFi, or campus survival? Ask your question and fellow students will answer in comments.
+              </p>
+            </div>
+          )}
+
+          {/* Meme Post Type Quick Studio Launcher Banner */}
+          {postType === 'meme' && (
+            <div className="p-3.5 rounded-2xl border border-amber-200 bg-amber-50/80 space-y-2.5">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-2xl">😂</span>
+                  <div>
+                    <h4 className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
+                      <span>In-Browser Meme Studio</span>
+                      <span className="text-[10px] bg-amber-200/80 text-amber-900 px-1.5 py-0.2 rounded font-mono font-bold">
+                        Sheng Badges
+                      </span>
+                    </h4>
+                    <p className="text-[11px] text-amber-800">
+                      Pick templates or upload photos, add bold meme text & Sheng stickers.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setMemeModalOpen(true)}
+                  className="cursor-pointer px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs inline-flex items-center gap-1.5 shadow-2xs shrink-0"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>{compressedResult ? 'Edit Meme' : 'Open Meme Editor'}</span>
+                </button>
+              </div>
+
+              {/* Meme Preview if generated */}
+              {compressedResult?.previewUrl && (
+                <div className="relative aspect-square max-w-[200px] mx-auto rounded-xl overflow-hidden border border-amber-300 shadow-sm bg-black group">
+                  <img
+                    src={compressedResult.previewUrl}
+                    alt="Active Meme Preview"
+                    className="w-full h-full object-contain"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setMemeModalOpen(true)}
+                    className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-xs font-bold transition-opacity cursor-pointer"
+                  >
+                    Click to Re-edit Meme
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Persona Toggle Section - Strict for Confession, toggleable for others */}
           {postType === 'confession' ? (
@@ -536,8 +664,12 @@ export function PostComposerModal({
                 ? '(Required Event Title)'
                 : postType === 'mushene'
                 ? '(Street Topic Header)'
+                : postType === 'meme'
+                ? '(Meme Headline / Setup)'
                 : postType === 'poll'
                 ? '(Topic header)'
+                : postType === 'ask_juja'
+                ? '(Question Topic / Unit / Subject)'
                 : postType === 'confession'
                 ? '(Optional confession title)'
                 : '(Optional caption)'}
@@ -549,7 +681,11 @@ export function PostComposerModal({
               onChange={(e) => setTitle(e.target.value)}
               maxLength={150}
               placeholder={
-                postType === 'event'
+                postType === 'ask_juja'
+                  ? 'e.g. Best WiFi spot near Gate B? or CAT 1 venue for SMA 2101?'
+                  : postType === 'meme'
+                  ? 'e.g. Stepping out of Gate C'
+                  : postType === 'event'
                   ? 'e.g. Juja Tech & Coding Hackathon or Hall 6 Game Night'
                   : postType === 'mushene'
                   ? 'e.g. Gate C boda drama, or Cafeteria update'
@@ -606,14 +742,16 @@ export function PostComposerModal({
             </div>
           )}
 
-          {/* Text / Body / Question / Confession / Mushene / Event Field */}
+          {/* Text / Body / Question / Confession / Mushene / Meme / Event Field */}
           <div className="space-y-1">
             <div className="flex justify-between items-center">
               <label
                 htmlFor="post-body"
                 className="text-[11px] font-semibold tracking-wide uppercase text-zinc-500"
               >
-                {postType === 'poll'
+                {postType === 'ask_juja'
+                  ? 'Ask Juja Question (Required • Students will reply)'
+                  : postType === 'poll'
                   ? 'Poll Question (Required)'
                   : postType === 'confession'
                   ? 'Confession (Required • Anonymous • Goes Live Instantly)'
@@ -621,6 +759,8 @@ export function PostComposerModal({
                   ? 'Mushene Street Story (Required • Punchy)'
                   : postType === 'event'
                   ? 'Event Description & Schedule (Required)'
+                  : postType === 'meme'
+                  ? 'Meme Caption / Context'
                   : postType === 'story'
                   ? 'Story Text (Required)'
                   : 'Caption / Context'}
@@ -629,8 +769,12 @@ export function PostComposerModal({
                 {body.length} /{' '}
                 {postType === 'poll'
                   ? '250'
+                  : postType === 'ask_juja'
+                  ? '2,500'
                   : postType === 'mushene'
                   ? '1,500'
+                  : postType === 'meme'
+                  ? '2,000'
                   : postType === 'confession'
                   ? '5,000'
                   : postType === 'event'
@@ -642,11 +786,15 @@ export function PostComposerModal({
             </div>
             <textarea
               id="post-body"
-              rows={postType === 'poll' ? 2 : postType === 'mushene' ? 4 : postType === 'confession' ? 4 : postType === 'story' ? 5 : 3}
+              rows={postType === 'poll' ? 2 : postType === 'ask_juja' ? 3 : postType === 'mushene' ? 4 : postType === 'confession' ? 4 : postType === 'story' ? 5 : 3}
               value={body}
               onChange={(e) => setBody(e.target.value)}
               placeholder={
-                postType === 'mushene'
+                postType === 'ask_juja'
+                  ? 'Ask your question clearly with any relevant context (unit code, hostel area, budget, semester)...'
+                  : postType === 'meme'
+                  ? "Add an optional punchline or caption for the campus feed..."
+                  : postType === 'mushene'
                   ? "What's the raw campus street juice or punchy story? Keep it punchy, vivid, and honest..."
                   : postType === 'event'
                   ? "Describe the event: agenda, who can attend, what to bring, and any entry details..."
@@ -873,6 +1021,33 @@ export function PostComposerModal({
           </div>
         </form>
       </div>
+
+      {/* In-Browser Meme Studio Modal */}
+      <MemeEditorModal
+        isOpen={memeModalOpen}
+        onClose={() => setMemeModalOpen(false)}
+        onPostMeme={(imageFile, imageUrl, memeCaption) => {
+          setCompressedResult({
+            file: imageFile,
+            blob: imageFile,
+            previewUrl: imageUrl,
+            originalSizeBytes: imageFile.size,
+            compressedSizeBytes: imageFile.size,
+            savingsPercent: 0,
+            width: 800,
+            height: 800,
+            mimeType: 'image/png',
+          });
+          setPostType('meme');
+          if (memeCaption) {
+            setBody(memeCaption);
+            if (!title) {
+              setTitle(memeCaption.slice(0, 80));
+            }
+          }
+          setMemeModalOpen(false);
+        }}
+      />
     </div>
   );
 }

@@ -22,6 +22,7 @@ const CHIPS: FilterChipConfig[] = [
   { id: 'poll', label: 'Polls', emoji: '📊' },
   { id: 'confession', label: 'Confessions', emoji: '🤫' },
   { id: 'meme', label: 'Memes', emoji: '😂' },
+  { id: 'ask_juja', label: 'Ask Juja', emoji: '❓' },
   { id: 'story', label: 'Stories', emoji: '📝' },
   { id: 'photo', label: 'Photos', emoji: '📸' },
 ];

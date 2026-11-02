@@ -5,6 +5,9 @@ import { getPinnedPollId, setPinnedPollId } from '../lib/polls';
 import { FeedFilterChips } from './FeedFilterChips';
 import { PostCard } from './PostCard';
 import { MusheneStoriesBar } from './MusheneStoriesBar';
+import { CampusPulseBar } from './CampusPulseBar';
+import { TrendingStrip } from './TrendingStrip';
+import { MemeOfTheWeekSection } from './MemeOfTheWeekSection';
 import {
   Sparkles,
   RefreshCw,
@@ -74,6 +77,23 @@ export function FeedSection({
     };
     window.addEventListener('post-status-changed', handleStatusChange);
     return () => window.removeEventListener('post-status-changed', handleStatusChange);
+  }, []);
+
+  // Listen to feed-post-approved event (e.g. approved from Guest Blogger review queue)
+  useEffect(() => {
+    const handleApproved = (e: any) => {
+      const approved = e.detail?.post as FeedPost;
+      if (!approved) return;
+      setPosts((prev) => {
+        const exists = prev.some((p) => p.id === approved.id);
+        if (exists) {
+          return prev.map((p) => (p.id === approved.id ? { ...p, status: 'live' } : p));
+        }
+        return [approved, ...prev];
+      });
+    };
+    window.addEventListener('feed-post-approved', handleApproved);
+    return () => window.removeEventListener('feed-post-approved', handleApproved);
   }, []);
 
   // Resolve pinned post object whenever pinnedPollId or posts change
@@ -251,6 +271,21 @@ export function FeedSection({
       <MusheneStoriesBar
         currentUserProfile={currentUserProfile}
         onRequireAuth={onRequireAuth}
+      />
+
+      {/* Live Campus Pulse Line */}
+      <CampusPulseBar posts={posts.length > 0 ? posts : SEED_JUJA_POSTS} />
+
+      {/* Trending in Juja (Top Three Posts Strip) */}
+      <TrendingStrip
+        posts={posts.length > 0 ? posts : SEED_JUJA_POSTS}
+        onSelectPost={onSelectPost}
+      />
+
+      {/* Weekly Meme of the Week Strip & Pinned Winner */}
+      <MemeOfTheWeekSection
+        currentUserProfile={currentUserProfile}
+        onSelectPost={onSelectPost}
       />
 
       {/* Community Feed Header & Live Indicator */}

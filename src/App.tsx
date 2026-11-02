@@ -14,6 +14,7 @@ import { fetchProfile, signOut } from './lib/auth';
 import { supabase } from './lib/supabase';
 import { togglePostStatus } from './lib/moderation';
 import { SEED_JUJA_POSTS } from './lib/posts';
+import { MemeEditorModal } from './components/MemeEditorModal';
 import { Profile, Post, FeedPost, CommentWithAuthor } from './types';
 import { UserPlus, Sparkles, ShieldCheck, Key, Plus } from 'lucide-react';
 
@@ -54,6 +55,8 @@ export default function App() {
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [composerOpen, setComposerOpen] = useState(false);
+  const [memeStudioOpen, setMemeStudioOpen] = useState(false);
+  const [composerInitialMeme, setComposerInitialMeme] = useState<{ file: File; previewUrl: string; caption: string } | null>(null);
   const [loadingSession, setLoadingSession] = useState(true);
   const [lastCreatedPost, setLastCreatedPost] = useState<FeedPost | null>(null);
   const [authPromptMessage, setAuthPromptMessage] = useState<string | null>(null);
@@ -313,20 +316,33 @@ export default function App() {
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  if (profile) {
-                    setComposerOpen(true);
-                  } else {
-                    setAuthModalOpen(true);
-                  }
-                }}
-                className="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 shadow-xs"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Create</span>
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setMemeStudioOpen(true)}
+                  className="min-h-[38px] px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                  title="Open Campus Meme Studio"
+                >
+                  <span className="text-sm">😂</span>
+                  <span className="hidden sm:inline">Meme Studio</span>
+                  <span className="sm:hidden">Meme</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (profile) {
+                      setComposerOpen(true);
+                    } else {
+                      setAuthModalOpen(true);
+                    }
+                  }}
+                  className="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 shadow-xs"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Create</span>
+                </button>
+              </div>
             </div>
 
             {/* Live Posts Feed */}
@@ -443,12 +459,35 @@ export default function App() {
       <PostComposerModal
         isOpen={composerOpen}
         profile={profile}
-        onClose={() => setComposerOpen(false)}
-        onPostCreated={handlePostCreated}
+        initialPostType={composerInitialMeme ? 'meme' : undefined}
+        initialMemeResult={composerInitialMeme}
+        onClose={() => {
+          setComposerOpen(false);
+          setComposerInitialMeme(null);
+        }}
+        onPostCreated={(post) => {
+          setComposerInitialMeme(null);
+          handlePostCreated(post);
+        }}
         onRequestAuth={() => setAuthModalOpen(true)}
         onRequestCreatePersona={() => {
           setComposerOpen(false);
           setOnboardingOpen(true);
+        }}
+      />
+
+      {/* Campus Meme Studio Modal */}
+      <MemeEditorModal
+        isOpen={memeStudioOpen}
+        onClose={() => setMemeStudioOpen(false)}
+        onPostMeme={(file, previewUrl, caption) => {
+          setMemeStudioOpen(false);
+          setComposerInitialMeme({ file, previewUrl, caption });
+          if (profile) {
+            setComposerOpen(true);
+          } else {
+            handleRequireAuth('Sign in with your campus account to post your meme to the Juja feed!');
+          }
         }}
       />
 

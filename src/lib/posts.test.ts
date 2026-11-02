@@ -228,6 +228,40 @@ test('filterFeedPosts filters by post type correctly', async () => {
   const memes = filterFeedPosts(SEED_JUJA_POSTS, 'meme');
   assert.ok(memes.length > 0);
   assert.ok(memes.every((p) => p.post_type === 'meme'));
+
+  // 'ask_juja' returns only ask_juja questions
+  const askJujaPosts = filterFeedPosts(SEED_JUJA_POSTS, 'ask_juja');
+  assert.ok(askJujaPosts.length >= 2);
+  assert.ok(askJujaPosts.every((p) => p.post_type === 'ask_juja'));
+});
+
+test('validatePostInput correctly validates Ask Juja questions', () => {
+  // Empty question body is rejected
+  const emptyAsk = validatePostInput({
+    postType: 'ask_juja',
+    title: 'Hostel advice',
+    body: '   ',
+  });
+  assert.strictEqual(emptyAsk.isValid, false);
+  assert.match(emptyAsk.error || '', /enter your question/);
+
+  // Too short (<5 chars) is rejected
+  const shortAsk = validatePostInput({
+    postType: 'ask_juja',
+    title: 'Hostel',
+    body: 'Why?',
+  });
+  assert.strictEqual(shortAsk.isValid, false);
+  assert.match(shortAsk.error || '', /at least 5 characters/);
+
+  // Valid question
+  const validAsk = validatePostInput({
+    postType: 'ask_juja',
+    title: 'WiFi in Hall 6',
+    body: 'Does anyone know who to contact when Hall 6 2nd floor WiFi router goes down during CAT week?',
+  });
+  assert.strictEqual(validAsk.isValid, true);
+  assert.strictEqual(validAsk.error, null);
 });
 
 test('SEED_JUJA_POSTS are valid, newest first, and belong to Juja', async () => {

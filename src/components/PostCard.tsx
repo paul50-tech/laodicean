@@ -25,8 +25,13 @@ import {
   Users,
   Check,
   Smartphone,
+  Bell,
+  BellRing,
+  HelpCircle,
 } from 'lucide-react';
 import { ShareCardModal } from './ShareCardModal';
+import { ProfileBadgeTag } from './ProfileBadgeTag';
+import { isPostFollowed, toggleFollowPost } from '../lib/postNotifications';
 
 interface PostCardProps {
   post: FeedPost;
@@ -65,6 +70,16 @@ export function PostCard({
     }
   });
   const [rsvpCount, setRsvpCount] = useState<number>(post.event_data?.rsvp_count ?? 0);
+  const [isFollowed, setIsFollowed] = useState<boolean>(() => isPostFollowed(post.id));
+  const [followToast, setFollowToast] = useState<string | null>(null);
+
+  const handleToggleFollow = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const res = toggleFollowPost(post.id);
+    setIsFollowed(res.isFollowed);
+    setFollowToast(res.isFollowed ? '🔔 Notifications turned on for this post' : '🔕 Notifications muted');
+    setTimeout(() => setFollowToast(null), 2500);
+  };
 
   const handleToggleRsvp = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -140,6 +155,13 @@ export function PostCard({
             <span>Meme</span>
           </span>
         );
+      case 'ask_juja':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-cyan-50 text-cyan-900 border border-cyan-200">
+            <span>❓</span>
+            <span>Ask Juja</span>
+          </span>
+        );
       default:
         return (
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-stone-100 text-stone-800">
@@ -173,8 +195,21 @@ export function PostCard({
           : 'border border-stone-200/90 hover:border-stone-300'
       }`}
     >
+      {/* Pinned Meme of the Week Banner */}
+      {post.is_meme_of_week && (
+        <div className="bg-gradient-to-r from-orange-500/15 via-amber-400/20 to-orange-500/15 border-b border-orange-200/90 -mx-4 -mt-4 mb-3 sm:-mx-5 sm:-mt-5 sm:mb-3.5 px-4 py-2 sm:px-5 flex items-center justify-between text-orange-950 font-semibold text-xs rounded-t-2xl">
+          <div className="flex items-center gap-1.5">
+            <span className="text-sm">🏆</span>
+            <span className="tracking-tight font-bold">Meme of the Week Winner</span>
+          </div>
+          <span className="text-[10px] font-mono text-orange-950 bg-orange-100 px-1.5 py-0.5 rounded border border-orange-300 uppercase tracking-wider font-bold">
+            👑 Pinned Champion
+          </span>
+        </div>
+      )}
+
       {/* Pinned Poll of the Week Banner */}
-      {isPinned && (
+      {isPinned && !post.is_meme_of_week && (
         <div className="bg-gradient-to-r from-amber-500/10 via-amber-400/20 to-amber-500/10 border-b border-amber-200/80 -mx-4 -mt-4 mb-3 sm:-mx-5 sm:-mt-5 sm:mb-3.5 px-4 py-2 sm:px-5 flex items-center justify-between text-amber-950 font-semibold text-xs rounded-t-2xl">
           <div className="flex items-center gap-1.5">
             <span className="text-sm">📌</span>
@@ -217,6 +252,16 @@ export function PostCard({
                   </span>
                 </>
               )}
+
+              {/* Badges for author */}
+              <ProfileBadgeTag
+                badges={post.badges}
+                authorName={post.author_real_name}
+                personaName={post.persona_name}
+                commentsCount={post.comments_count}
+                postType={post.post_type}
+                isMemeWinner={post.is_meme_of_week}
+              />
 
               {/* Admin unmask indicator - reveals real student name to admins */}
               {post.is_persona && currentUserProfile?.role === 'admin' && (
@@ -396,6 +441,49 @@ export function PostCard({
             </button>
           </div>
         </div>
+      ) : post.post_type === 'ask_juja' ? (
+        /* Distinctive Ask Juja Question Card Layout */
+        <div className="bg-gradient-to-br from-cyan-50/80 via-white to-sky-50/50 border border-cyan-200/90 rounded-2xl p-4 sm:p-5 space-y-3 shadow-2xs">
+          <div className="flex items-center justify-between gap-2">
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-cyan-100 text-cyan-950 border border-cyan-300">
+              <HelpCircle className="w-3.5 h-3.5 text-cyan-700" />
+              <span>Ask Juja Question</span>
+            </div>
+            <span className="text-[11px] text-cyan-900 font-medium">
+              Juja campus community answers
+            </span>
+          </div>
+
+          <div className="space-y-1.5">
+            <p className="font-display text-sm sm:text-base font-bold text-zinc-950 leading-snug">
+              {isTruncated && !isExpanded ? teaser : post.body}
+            </p>
+            {isTruncated && (
+              <button
+                type="button"
+                onClick={() => setIsExpanded(!isExpanded)}
+                className="cursor-pointer text-xs font-semibold text-cyan-800 hover:text-cyan-950 inline-flex items-center gap-0.5 transition-colors"
+              >
+                <span>{isExpanded ? 'Show less' : 'Read full question'}</span>
+                {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              </button>
+            )}
+          </div>
+
+          <div className="pt-2 border-t border-cyan-100 flex items-center justify-between gap-2">
+            <span className="text-xs text-cyan-900 font-medium">
+              {commentsCount === 0 ? 'No answers yet • Be first to help' : `${commentsCount} answer${commentsCount === 1 ? '' : 's'}`}
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowComments(true)}
+              className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-cyan-700 text-white hover:bg-cyan-800 transition-colors shadow-2xs"
+            >
+              <MessageCircle className="w-3.5 h-3.5" />
+              <span>Answer Question</span>
+            </button>
+          </div>
+        </div>
       ) : (
         /* Teaser Body with "Read more" / "Show less" Expander for other post types */
         <div className="text-xs sm:text-sm text-zinc-700 leading-relaxed space-y-1.5">
@@ -464,8 +552,27 @@ export function PostCard({
           onRequireAuth={onRequireAuth}
         />
 
-        {/* Right Actions: Comments Toggle & Share */}
+        {/* Right Actions: Follow/Notify, Comments Toggle & Share */}
         <div className="flex items-center gap-1.5 sm:gap-2 ml-auto">
+          {/* Follow / Notify Button */}
+          <button
+            type="button"
+            onClick={handleToggleFollow}
+            className={`cursor-pointer inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium transition-colors border ${
+              isFollowed
+                ? 'bg-amber-50 text-amber-950 border-amber-300 font-semibold'
+                : 'bg-stone-50/80 border-stone-200/90 text-stone-600 hover:bg-stone-100 hover:border-stone-300'
+            }`}
+            title={isFollowed ? 'Following: You will be notified of new activity' : 'Follow: Get notified on new comments'}
+          >
+            {isFollowed ? (
+              <BellRing className="w-3.5 h-3.5 text-amber-600 animate-pulse" />
+            ) : (
+              <Bell className="w-3.5 h-3.5 text-stone-500" />
+            )}
+            <span className="text-[11px] font-semibold">{isFollowed ? 'Following' : 'Follow'}</span>
+          </button>
+
           {/* Comments Toggle Button */}
           <button
             type="button"
@@ -521,6 +628,13 @@ export function PostCard({
           )}
         </div>
       </div>
+
+      {/* Follow / Notify Toast Notification */}
+      {followToast && (
+        <div className="bg-amber-50 border border-amber-200/90 text-amber-950 px-3 py-1.5 rounded-xl text-xs flex items-center gap-2 font-medium transition-all animate-in fade-in">
+          <span>{followToast}</span>
+        </div>
+      )}
 
       {/* Expandable Open Threaded Comments Section */}
       {showComments && (

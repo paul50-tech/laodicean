@@ -11,6 +11,7 @@ import {
   Sparkles,
   Flag,
 } from 'lucide-react';
+import { ProfileBadgeTag } from './ProfileBadgeTag';
 
 interface CommentItemProps {
   comment: CommentWithAuthor;
@@ -129,6 +130,13 @@ export function CommentItem({
                   </span>
                 </>
               )}
+
+              {/* Profile Badges */}
+              <ProfileBadgeTag
+                badges={comment.badges}
+                authorName={comment.author_real_name}
+                personaName={comment.persona_name}
+              />
 
               {/* Admin unmask tag if viewer is admin/author */}
               {comment.is_persona && comment.author_real_name && (

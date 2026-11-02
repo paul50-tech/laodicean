@@ -2,7 +2,7 @@
  * Core types for Laodicean matching supabase/schema.sql.
  */
 
-export type UserRole = 'user' | 'moderator' | 'admin';
+export type UserRole = 'user' | 'moderator' | 'admin' | 'guest_blogger';
 
 export interface Profile {
   id: string;
@@ -12,6 +12,20 @@ export interface Profile {
   role: UserRole;
   created_at: string;
   updated_at: string;
+}
+
+export interface GuestBloggerAccount {
+  id: string;
+  email: string;
+  display_name: string;
+  persona_name: string;
+  persona_avatar: string;
+  bio?: string;
+  require_review: boolean; // if true, posts from this guest blogger require admin approval
+  status: 'active' | 'suspended';
+  created_at: string;
+  created_by?: string;
+  posts_count?: number;
 }
 
 export type CommunityStatus = 'pending' | 'approved';
@@ -42,9 +56,20 @@ export type PostType =
   | 'meme'
   | 'confession'
   | 'event'
-  | 'mushene';
+  | 'mushene'
+  | 'ask_juja';
 
-export type PostStatus = 'pending' | 'live' | 'hidden';
+export type PostStatus = 'pending' | 'live' | 'hidden' | 'rejected';
+
+export type ProfileBadgeType = 'top_storyteller' | 'top_commenter' | 'meme_champion';
+
+export interface ProfileBadgeInfo {
+  type: ProfileBadgeType;
+  label: string;
+  emoji: string;
+  description: string;
+  badgeClass: string;
+}
 
 export interface PollOptionResult {
   id: string;
@@ -85,6 +110,9 @@ export interface Post {
   updated_at: string;
   poll_data?: PollWithResults | null;
   event_data?: EventData | null;
+  review_feedback?: string | null;
+  reviewed_at?: string | null;
+  badges?: ProfileBadgeType[];
 }
 
 export type FeedFilter =
@@ -95,7 +123,8 @@ export type FeedFilter =
   | 'confession'
   | 'meme'
   | 'story'
-  | 'photo';
+  | 'photo'
+  | 'ask_juja';
 
 export interface ReactionCounts {
   laugh: number;
@@ -126,6 +155,35 @@ export interface FeedPost {
   comments_count?: number;
   poll_data?: PollWithResults | null;
   event_data?: EventData | null;
+  review_feedback?: string | null;
+  reviewed_at?: string | null;
+  badges?: ProfileBadgeType[];
+  is_meme_of_week?: boolean;
+}
+
+export interface MemeCandidate {
+  id: string;
+  postId: string;
+  title: string;
+  imageUrl: string;
+  authorName: string;
+  votesCount: number;
+  captionSnippet: string;
+}
+
+export interface MemeOfTheWeekContest {
+  id: string;
+  weekLabel: string;
+  candidates: MemeCandidate[];
+  pinnedWinnerPostId?: string | null;
+  userVotedCandidateId?: string | null;
+  totalVotes: number;
+}
+
+export interface PostFollowSubscription {
+  postId: string;
+  followedAt: string;
+  lastSeenCommentsCount?: number;
 }
 
 export interface MusheneMoment {
@@ -160,6 +218,7 @@ export interface CommentWithAuthor extends Comment {
   author_real_name?: string | null;
   author_role?: UserRole;
   replies?: CommentWithAuthor[];
+  badges?: ProfileBadgeType[];
 }
 
 export type ReactionType = 'laugh' | 'relatable' | 'fire';

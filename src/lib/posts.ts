@@ -4,7 +4,9 @@
  */
 
 import { supabase } from './supabase';
-import { Post, PostType, FeedPost, FeedFilter, ReactionCounts, EventData } from '../types';
+import { Post, PostType, FeedPost, FeedFilter, ReactionCounts, EventData, UserRole, PostStatus } from '../types';
+import { rankCampusFeed } from './feedRanking';
+import { addPostToPendingQueue } from './guestBloggers';
 
 export const DEFAULT_COMMUNITY_SLUG = 'juja';
 
@@ -20,6 +22,9 @@ export interface CreatePostParams {
   isPersona: boolean;
   communityId?: string;
   eventData?: EventData | null;
+  status?: PostStatus;
+  authorRole?: UserRole;
+  requiresReview?: boolean;
 }
 
 export interface PostValidationResult {
@@ -147,6 +152,22 @@ export function validatePostInput(params: {
     return { isValid: true, error: null };
   }
 
+  if (postType === 'meme') {
+    if (!hasImage) {
+      return {
+        isValid: false,
+        error: 'Please design or upload a meme image before publishing.',
+      };
+    }
+    if (trimmedBody.length > 2000) {
+      return {
+        isValid: false,
+        error: 'Meme caption must be 2,000 characters or less.',
+      };
+    }
+    return { isValid: true, error: null };
+  }
+
   if (postType === 'photo') {
     if (!hasImage) {
       return {
@@ -213,6 +234,28 @@ export function validatePostInput(params: {
     return { isValid: true, error: null };
   }
 
+  if (postType === 'ask_juja') {
+    if (!trimmedBody) {
+      return {
+        isValid: false,
+        error: 'Please enter your question for Juja campus.',
+      };
+    }
+    if (trimmedBody.length < 5) {
+      return {
+        isValid: false,
+        error: 'Your question should be at least 5 characters.',
+      };
+    }
+    if (trimmedBody.length > 2500) {
+      return {
+        isValid: false,
+        error: 'Question must be 2,500 characters or less.',
+      };
+    }
+    return { isValid: true, error: null };
+  }
+
   // Story post type
   if (!trimmedBody) {
     return {
@@ -261,6 +304,44 @@ export const SEED_JUJA_POSTS: FeedPost[] = [
     updated_at: new Date(Date.now() - 1000 * 60 * 10).toISOString(),
     reactions_count: { laugh: 42, relatable: 31, fire: 18, total: 91 },
     comments_count: 27,
+  },
+  {
+    id: 'seed-juja-ask-1',
+    community_id: JUJA_FALLBACK_ID,
+    community_name: 'Juja',
+    community_slug: 'juja',
+    post_type: 'ask_juja',
+    title: 'Which 3rd-year engineering unit is harder: EEE 311 or SMA 301?',
+    body: 'Second CAT is coming up in two weeks and everyone in Hall 2 is stressing. Between Applied Differential Equations and Circuit Analysis, which one should we dedicate the library weekend grind to? Looking for advice from seniors who survived.',
+    is_persona: true,
+    persona_name: '@hall2_fresher',
+    persona_avatar: '❓',
+    author_role: 'user',
+    status: 'live',
+    created_at: new Date(Date.now() - 1000 * 60 * 14).toISOString(), // 14 mins ago
+    updated_at: new Date(Date.now() - 1000 * 60 * 14).toISOString(),
+    reactions_count: { laugh: 8, relatable: 74, fire: 19, total: 101 },
+    comments_count: 28,
+    badges: ['top_commenter'],
+  },
+  {
+    id: 'seed-juja-meme-1',
+    community_id: JUJA_FALLBACK_ID,
+    community_name: 'Juja',
+    community_slug: 'juja',
+    post_type: 'meme',
+    title: 'Stepping Out of Gate C Reality',
+    body: 'STEPPING OUT OF GATE C — RETURNING LOOKING LIKE A POWDERED DOUGHNUT 😂 #JujaDustGang',
+    image_url: 'https://images.unsplash.com/photo-1541872703-74c5e44368f9?auto=format&fit=crop&w=800&q=80',
+    is_persona: true,
+    persona_name: '@dust_general',
+    persona_avatar: '🌪️',
+    author_role: 'user',
+    status: 'live',
+    created_at: new Date(Date.now() - 1000 * 60 * 18).toISOString(), // 18 mins ago
+    updated_at: new Date(Date.now() - 1000 * 60 * 18).toISOString(),
+    reactions_count: { laugh: 154, relatable: 98, fire: 45, total: 297 },
+    comments_count: 36,
   },
   {
     id: 'seed-juja-event-1',
@@ -343,6 +424,27 @@ export const SEED_JUJA_POSTS: FeedPost[] = [
     updated_at: new Date(Date.now() - 1000 * 60 * 90).toISOString(),
     reactions_count: { laugh: 15, relatable: 56, fire: 67, total: 138 },
     comments_count: 42,
+  },
+  {
+    id: 'seed-juja-ask-2',
+    community_id: JUJA_FALLBACK_ID,
+    community_name: 'Juja',
+    community_slug: 'juja',
+    post_type: 'ask_juja',
+    title: 'Best quiet spot with power sockets to study on weekends?',
+    body: 'Main library 2nd floor gets crowded by 10 AM on Saturdays. Are the Tech Park discussion rooms or the Agriculture pavilion open for group revision with laptops? Drop your secret campus spots below!',
+    is_persona: false,
+    persona_name: '@weekend_scholar',
+    persona_avatar: '📚',
+    author_id: 'real-author-scholar',
+    author_real_name: 'Collins Kipkorir',
+    author_role: 'user',
+    status: 'live',
+    created_at: new Date(Date.now() - 1000 * 60 * 110).toISOString(), // 1.8 hrs ago
+    updated_at: new Date(Date.now() - 1000 * 60 * 110).toISOString(),
+    reactions_count: { laugh: 4, relatable: 89, fire: 42, total: 135 },
+    comments_count: 36,
+    badges: ['top_storyteller'],
   },
   {
     id: 'seed-juja-4',
@@ -555,6 +657,10 @@ export async function getJujaCommunityId(): Promise<string> {
 export async function createPost(
   params: CreatePostParams
 ): Promise<{ post: Post | null; error: string | null }> {
+  const initialStatus: PostStatus =
+    params.status ||
+    (params.authorRole === 'guest_blogger' || params.requiresReview ? 'pending' : 'live');
+
   if (!supabase) {
     const fallbackPost: Post = {
       id: `local-post-${Date.now()}`,
@@ -565,11 +671,24 @@ export async function createPost(
       body: params.body.trim(),
       image_url: params.imageUrl || null,
       is_persona: Boolean(params.isPersona),
-      status: 'live',
+      status: initialStatus,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       event_data: params.eventData || null,
     };
+
+    if (initialStatus === 'pending') {
+      addPostToPendingQueue({
+        ...fallbackPost,
+        community_name: 'Juja',
+        community_slug: 'juja',
+        persona_name: params.isPersona ? '@guest_blogger' : '',
+        author_role: params.authorRole || 'guest_blogger',
+        reactions_count: { laugh: 0, relatable: 0, fire: 0, total: 0 },
+        comments_count: 0,
+      });
+    }
+
     return { post: fallbackPost, error: null };
   }
 
@@ -598,7 +717,7 @@ export async function createPost(
       body: params.body.trim(),
       image_url: params.imageUrl || null,
       is_persona: Boolean(params.isPersona),
-      status: 'live', // Goes live immediately as requested
+      status: initialStatus,
     };
 
     const { data, error } = await supabase
@@ -618,11 +737,24 @@ export async function createPost(
         body: params.body.trim(),
         image_url: params.imageUrl || null,
         is_persona: Boolean(params.isPersona),
-        status: 'live',
+        status: initialStatus,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         event_data: params.eventData || null,
       };
+
+      if (initialStatus === 'pending') {
+        addPostToPendingQueue({
+          ...fallbackPost,
+          community_name: 'Juja',
+          community_slug: 'juja',
+          persona_name: params.isPersona ? '@guest_blogger' : '',
+          author_role: params.authorRole || 'guest_blogger',
+          reactions_count: { laugh: 0, relatable: 0, fire: 0, total: 0 },
+          comments_count: 0,
+        });
+      }
+
       return { post: fallbackPost, error: null };
     }
 
@@ -630,6 +762,19 @@ export async function createPost(
     if (params.eventData) {
       postObj.event_data = params.eventData;
     }
+
+    if (initialStatus === 'pending') {
+      addPostToPendingQueue({
+        ...postObj,
+        community_name: 'Juja',
+        community_slug: 'juja',
+        persona_name: params.isPersona ? '@guest_blogger' : '',
+        author_role: params.authorRole || 'guest_blogger',
+        reactions_count: { laugh: 0, relatable: 0, fire: 0, total: 0 },
+        comments_count: 0,
+      });
+    }
+
     return { post: postObj, error: null };
   } catch (err: any) {
     const fallbackPost: Post = {
@@ -641,11 +786,24 @@ export async function createPost(
       body: params.body.trim(),
       image_url: params.imageUrl || null,
       is_persona: Boolean(params.isPersona),
-      status: 'live',
+      status: initialStatus,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       event_data: params.eventData || null,
     };
+
+    if (initialStatus === 'pending') {
+      addPostToPendingQueue({
+        ...fallbackPost,
+        community_name: 'Juja',
+        community_slug: 'juja',
+        persona_name: params.isPersona ? '@guest_blogger' : '',
+        author_role: params.authorRole || 'guest_blogger',
+        reactions_count: { laugh: 0, relatable: 0, fire: 0, total: 0 },
+        comments_count: 0,
+      });
+    }
+
     return { post: fallbackPost, error: null };
   }
 }
@@ -794,16 +952,17 @@ export async function fetchInfiniteFeed(
     }
   }
 
-  // Fallback to seed posts so user/evaluator can test infinite scroll & filter chips immediately
+  // Fallback to seed posts with intelligent ranking (newest + high engagement boost + fresh voices)
   const filteredSeed = filterFeedPosts(SEED_JUJA_POSTS, filter);
+  const rankedSeed = rankCampusFeed(filteredSeed);
   const start = page * pageSize;
   const end = start + pageSize;
-  const slice = filteredSeed.slice(start, end);
+  const slice = rankedSeed.slice(start, end);
 
   return {
     posts: slice,
-    hasMore: end < filteredSeed.length,
-    total: filteredSeed.length,
+    hasMore: end < rankedSeed.length,
+    total: rankedSeed.length,
   };
 }
 

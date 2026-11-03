@@ -18,8 +18,9 @@ import {
   Calendar,
   MapPin,
   HelpCircle,
+  ShieldAlert,
 } from 'lucide-react';
-import { Profile, PostType, Post } from '../types';
+import { Profile, PostType, Post, Community } from '../types';
 import {
   compressImage,
   formatFileSize,
@@ -27,12 +28,14 @@ import {
   CompressedImageResult,
 } from '../lib/imageCompression';
 import { createPost, validatePostInput } from '../lib/posts';
-import { validatePollInput, savePollToDatabase } from '../lib/polls';
+import { validatePollInput, savePollToDatabase, detectRealPersonInPoll } from '../lib/polls';
+import { checkRateLimit, recordActionTimestamp } from '../lib/rateLimit';
 import { MemeEditorModal } from './MemeEditorModal';
 
 interface PostComposerModalProps {
   isOpen: boolean;
   profile: Profile | null;
+  community?: Community | null;
   onClose: () => void;
   onPostCreated: (post: Post) => void;
   onRequestCreatePersona: () => void;
@@ -44,6 +47,7 @@ interface PostComposerModalProps {
 export function PostComposerModal({
   isOpen,
   profile,
+  community,
   onClose,
   onPostCreated,
   onRequestCreatePersona,
@@ -57,7 +61,12 @@ export function PostComposerModal({
   const [eventDate, setEventDate] = useState('');
   const [eventPlace, setEventPlace] = useState('');
   const [pollOptions, setPollOptions] = useState<string[]>(['', '']);
+  const [confirmNoRealPeople, setConfirmNoRealPeople] = useState(false);
   const [memeModalOpen, setMemeModalOpen] = useState(false);
+
+  // Live real person detection for Rule #3
+  const realPersonPollCheck =
+    postType === 'poll' ? detectRealPersonInPoll(body, pollOptions) : { detected: false };
 
   useEffect(() => {
     if (initialPostType && isOpen) {
@@ -174,6 +183,13 @@ export function PostComposerModal({
 
     setErrorMessage(null);
 
+    // Rate limit check against spam
+    const rateCheck = checkRateLimit('post', profile.id);
+    if (!rateCheck.allowed) {
+      setErrorMessage(rateCheck.message);
+      return;
+    }
+
     // If confession, strictly require persona setup
     if (postType === 'confession' && !hasPersona) {
       setErrorMessage('A campus persona is required to submit a confession so your identity remains protected.');
@@ -182,10 +198,16 @@ export function PostComposerModal({
 
     // Validate inputs
     if (postType === 'poll') {
+      if (!confirmNoRealPeople) {
+        setErrorMessage('Campus Rule #3: You must confirm this poll does not name, rank, or single out real individuals.');
+        return;
+      }
+
       const pollValidation = validatePollInput({
         question: body,
         options: pollOptions,
         title,
+        confirmNoRealPeople,
       });
       if (!pollValidation.isValid) {
         setErrorMessage(pollValidation.error);
@@ -256,6 +278,7 @@ export function PostComposerModal({
         body: body.trim(),
         imageUrl: finalImageUrl,
         isPersona: isPostPersona,
+        communityId: community?.id,
         authorRole: profile.role,
         requiresReview: profile.role === 'guest_blogger',
         eventData:
@@ -273,7 +296,11 @@ export function PostComposerModal({
       }
 
       if (createRes.post) {
-        let finalPost = createRes.post;
+        let finalPost = {
+          ...createRes.post,
+          community_name: community?.name || 'Juja',
+          community_slug: community?.slug || 'juja',
+        };
 
         // 3. If poll, create and attach poll questions and options
         if (postType === 'poll') {
@@ -283,18 +310,21 @@ export function PostComposerModal({
             options: pollOptions,
           });
           finalPost = {
-            ...createRes.post,
+            ...finalPost,
             poll_data: pollData,
           };
         }
 
         onPostCreated(finalPost);
+        recordActionTimestamp('post', profile.id);
+
         // Clean up & reset
         setTitle('');
         setBody('');
         setEventDate('');
         setEventPlace('');
         setPollOptions(['', '']);
+        setConfirmNoRealPeople(false);
         setCompressedResult(null);
         setUploadProgress(null);
         onClose();
@@ -321,8 +351,12 @@ export function PostComposerModal({
             <h2 id="composer-modal-title" className="font-display text-base font-bold text-zinc-950">
               New Campus Post
             </h2>
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100/80 text-emerald-900 border border-emerald-200/60">
-              Juja (JKUAT)
+            <span
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100/80 text-emerald-900 border border-emerald-200/60"
+              style={community?.color ? { borderColor: community.color } : undefined}
+            >
+              <span>{community?.icon || '🎓'}</span>
+              <span>{community?.name || 'Juja (JKUAT)'}</span>
             </span>
           </div>
 
@@ -869,6 +903,45 @@ export function PostComposerModal({
                   <span>Add Option ({pollOptions.length}/6)</span>
                 </button>
               )}
+
+              {/* Campus Rule #3 Notice: No Polls Naming Real People */}
+              <div className="pt-2 border-t border-stone-200/80 space-y-2">
+                <div className="p-3 bg-amber-50/90 border border-amber-200 rounded-xl space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold text-xs text-amber-950">
+                    <ShieldAlert className="w-4 h-4 text-amber-700 shrink-0" />
+                    <span>Juja Campus Rule #3: Polls Must Not Name Real People</span>
+                  </div>
+                  <p className="text-[11px] text-amber-900 leading-relaxed">
+                    Polls must compare campus locations, course units, spots, food, or general scenarios. Polls that target, rank, or single out individual students, faculty, or staff by personal name are strictly prohibited and result in immediate post removal and unmasking.
+                  </p>
+                </div>
+
+                {/* Real Person Heuristic Alert if detected */}
+                {realPersonPollCheck.detected && (
+                  <div className="p-2.5 bg-rose-50 border border-rose-300 rounded-xl text-xs text-rose-900 flex items-start gap-2 animate-in fade-in">
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-bold text-[11px]">Prohibited Naming Alert:</p>
+                      <p className="text-[11px] text-rose-800 leading-snug">
+                        {realPersonPollCheck.reason}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Confirmation Checkbox */}
+                <label className="flex items-start gap-2.5 p-2.5 rounded-xl border border-stone-200 bg-white hover:bg-stone-50 cursor-pointer text-xs">
+                  <input
+                    type="checkbox"
+                    checked={confirmNoRealPeople}
+                    onChange={(e) => setConfirmNoRealPeople(e.target.checked)}
+                    className="mt-0.5 rounded text-emerald-800 focus:ring-emerald-700 border-stone-300"
+                  />
+                  <span className="text-[11px] text-zinc-700 leading-snug">
+                    <strong className="text-zinc-900">I confirm this poll adheres to Juja Rule #3:</strong> It does not name, rank, or single out real individual students, lecturers, or staff members.
+                  </span>
+                </label>
+              </div>
             </div>
           )}
 

@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { CommentWithAuthor, Profile } from '../types';
 import { postComment } from '../lib/comments';
+import { checkRateLimit, recordActionTimestamp } from '../lib/rateLimit';
+import { toggleCommentStatus } from '../lib/moderation';
 import {
   CornerDownRight,
   Send,
@@ -10,6 +12,9 @@ import {
   UserCheck,
   Sparkles,
   Flag,
+  AlertTriangle,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { ProfileBadgeTag } from './ProfileBadgeTag';
 
@@ -37,6 +42,7 @@ export function CommentItem({
   );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const isAdmin = currentUserProfile?.role === 'admin';
 
   const formatRelativeTime = (isoString: string) => {
     try {
@@ -70,6 +76,13 @@ export function CommentItem({
       return;
     }
 
+    // Rate limit check against spam
+    const rateCheck = checkRateLimit('comment', currentUserProfile.id);
+    if (!rateCheck.allowed) {
+      setError(rateCheck.message);
+      return;
+    }
+
     setSubmitting(true);
     setError(null);
 
@@ -87,6 +100,8 @@ export function CommentItem({
         setError(res.error || 'Failed to post reply.');
         return;
       }
+
+      recordActionTimestamp('comment', currentUserProfile.id);
 
       onReplyAdded(res.comment);
       setReplyBody('');
@@ -157,10 +172,43 @@ export function CommentItem({
           </div>
         </div>
 
-        {/* Comment Body */}
-        <p className="text-zinc-800 leading-relaxed whitespace-pre-line text-xs pl-0.5">
-          {comment.body}
-        </p>
+        {/* Comment Body or Auto-Hidden Placeholder */}
+        {comment.is_hidden ? (
+          isAdmin ? (
+            <div className="space-y-2">
+              <div className="p-2 bg-amber-50 rounded-lg border border-amber-200 text-amber-900 text-[11px] flex items-center justify-between">
+                <span className="flex items-center gap-1 font-semibold">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-700" />
+                  <span>Hidden Pending Review (Reports threshold reached)</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => toggleCommentStatus(comment.id, 'live')}
+                  className="px-2 py-0.5 bg-emerald-700 text-white rounded text-[10px] font-bold hover:bg-emerald-800 cursor-pointer"
+                >
+                  Restore
+                </button>
+              </div>
+              <p className="text-zinc-700 line-through text-xs italic pl-0.5">
+                {comment.body}
+              </p>
+            </div>
+          ) : (
+            <div className="p-2.5 bg-amber-50/70 border border-amber-200 rounded-lg text-amber-950 space-y-0.5">
+              <p className="font-bold text-[11px] flex items-center gap-1 text-amber-900">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-700" />
+                <span>Comment Hidden Pending Moderation</span>
+              </p>
+              <p className="text-[10px] text-amber-800 leading-relaxed">
+                This comment reached the community report threshold and has been auto-hidden pending admin review.
+              </p>
+            </div>
+          )
+        ) : (
+          <p className="text-zinc-800 leading-relaxed whitespace-pre-line text-xs pl-0.5">
+            {comment.body}
+          </p>
+        )}
 
         {/* Action bar: Reply and Report buttons */}
         <div className="flex items-center justify-between pt-1 border-t border-stone-200/50 text-[11px]">
@@ -173,7 +221,7 @@ export function CommentItem({
             <span>Reply</span>
           </button>
 
-          {onReportComment && (
+          {!comment.is_hidden && onReportComment && (
             <button
               type="button"
               onClick={() => onReportComment(comment)}

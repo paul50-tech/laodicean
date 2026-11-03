@@ -7,6 +7,8 @@ import {
   addLocalMoment,
   validateMomentInput,
 } from '../lib/moments';
+import { checkRateLimit, recordActionTimestamp } from '../lib/rateLimit';
+import { containsBannedWords } from '../lib/bannedWords';
 
 interface CreateMomentModalProps {
   isOpen: boolean;
@@ -45,6 +47,18 @@ export function CreateMomentModal({
       return;
     }
 
+    const rateCheck = checkRateLimit('moment', currentUserProfile.id);
+    if (!rateCheck.allowed) {
+      setError(rateCheck.message);
+      return;
+    }
+
+    const bannedCheck = containsBannedWords(text);
+    if (bannedCheck.hasBannedWord) {
+      setError(`Your moment contains restricted word "${bannedCheck.matchedWord}". Please follow Juja community rules.`);
+      return;
+    }
+
     const validation = validateMomentInput(text);
     if (!validation.isValid) {
       setError(validation.error);
@@ -73,6 +87,7 @@ export function CreateMomentModal({
       });
 
       addLocalMoment(moment);
+      recordActionTimestamp('moment', currentUserProfile.id);
       if (onMomentCreated) {
         onMomentCreated(moment);
       }

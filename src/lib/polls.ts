@@ -6,6 +6,7 @@
 
 import { supabase } from './supabase';
 import { PollOptionResult, PollWithResults } from '../types';
+import { containsBannedWords } from './bannedWords';
 
 export const PINNED_POLL_KEY = 'laodicean_pinned_poll_id';
 export const VOTED_POLLS_KEY = 'laodicean_voted_polls';
@@ -16,6 +17,65 @@ export const DEFAULT_PINNED_POLL_ID = 'seed-juja-3';
 export interface PollValidationResult {
   isValid: boolean;
   error: string | null;
+  warning?: string | null;
+}
+
+/**
+ * Pure heuristic: Detects whether a poll question or option appears to name or target real individuals
+ * (e.g. students, lecturers, faculty members), violating Juja Rule #3.
+ */
+export function detectRealPersonInPoll(
+  question: string,
+  options: string[] = []
+): { detected: boolean; reason?: string } {
+  const combined = [question, ...options].join(' ').toLowerCase();
+
+  // 1. Direct targeted phrasing patterns
+  const targetedPhrases = [
+    'who is the prettiest',
+    'who is the ugliest',
+    'who is the most toxic',
+    'who is the worst lecturer',
+    'who is the best lecturer',
+    'who is the worst prof',
+    'who is the best prof',
+    'vote out lecturer',
+    'who has the worst attitude',
+    'who is dating who',
+    'who cheated on',
+    'which student is',
+    'expose lecturer',
+    'expose student',
+  ];
+
+  for (const phrase of targetedPhrases) {
+    if (combined.includes(phrase)) {
+      return {
+        detected: true,
+        reason: `Poll appears to target or rank individual people ("${phrase}"). Juja Rule #3 strictly prohibits polls about individuals.`,
+      };
+    }
+  }
+
+  // 2. Titles followed by names
+  const titleRegex = /\b(prof|professor|dr|doctor|lecturer|mr|mrs|miss)\b\.?\s+[a-z]{3,}/i;
+  if (titleRegex.test(question)) {
+    return {
+      detected: true,
+      reason: 'Poll question refers to a specific faculty member or individual by title/name. Please keep polls focused on units, spots, or topics.',
+    };
+  }
+
+  for (const opt of options) {
+    if (titleRegex.test(opt)) {
+      return {
+        detected: true,
+        reason: `Poll option "${opt}" names a specific individual. Juja Rule #3 prohibits naming individuals in poll options.`,
+      };
+    }
+  }
+
+  return { detected: false };
 }
 
 /**
@@ -54,6 +114,7 @@ export function validatePollInput(params: {
   question: string;
   options: string[];
   title?: string | null;
+  confirmNoRealPeople?: boolean;
 }): PollValidationResult {
   const trimmedQuestion = (params.question || '').trim();
 
@@ -115,6 +176,42 @@ export function validatePollInput(params: {
       };
     }
     seen.add(lower);
+  }
+
+  // Check for banned words in question or options
+  const questionBanned = containsBannedWords(trimmedQuestion);
+  if (questionBanned.hasBannedWord) {
+    return {
+      isValid: false,
+      error: `Poll question contains prohibited word "${questionBanned.matchedWord}". Please follow Juja community rules.`,
+    };
+  }
+
+  for (const opt of cleanOptions) {
+    const optBanned = containsBannedWords(opt);
+    if (optBanned.hasBannedWord) {
+      return {
+        isValid: false,
+        error: `Poll option "${opt}" contains prohibited word "${optBanned.matchedWord}". Please follow Juja community rules.`,
+      };
+    }
+  }
+
+  // Rule #3 Check: Naming real people
+  const realPersonCheck = detectRealPersonInPoll(trimmedQuestion, cleanOptions);
+  if (realPersonCheck.detected) {
+    return {
+      isValid: false,
+      error: realPersonCheck.reason || 'Poll violates Rule #3: Polls cannot name, rank, or target individual people.',
+    };
+  }
+
+  // If confirmNoRealPeople is explicitly provided and false, reject
+  if (params.confirmNoRealPeople === false) {
+    return {
+      isValid: false,
+      error: 'You must confirm that this poll does not name or target real individuals (Juja Rule #3).',
+    };
   }
 
   return { isValid: true, error: null };

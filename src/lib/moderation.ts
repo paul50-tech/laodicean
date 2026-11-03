@@ -13,6 +13,9 @@ import { SEED_JUJA_POSTS } from './posts';
 
 export const LOCAL_REPORTS_KEY = 'laodicean_reports_store';
 export const LOCAL_HIDDEN_POSTS_KEY = 'laodicean_hidden_posts_store';
+export const LOCAL_HIDDEN_COMMENTS_KEY = 'laodicean_hidden_comments_store';
+export const LOCAL_AUTOHIDE_THRESHOLD_KEY = 'laodicean_autohide_threshold';
+export const DEFAULT_AUTOHIDE_THRESHOLD = 3;
 
 export interface EnrichedReport extends Report {
   target_type: 'post' | 'comment';
@@ -21,6 +24,7 @@ export interface EnrichedReport extends Report {
   target_author_persona?: string | null;
   target_author_real_name?: string | null;
   post_status?: 'live' | 'hidden';
+  auto_hidden?: boolean;
 }
 
 export interface PersonaIdentityRecord {
@@ -205,7 +209,99 @@ export function saveHiddenPostIds(ids: Set<string>): void {
 }
 
 /**
+ * Retrieves the configured auto-hide report threshold (defaults to 3).
+ */
+export function getAutoHideThreshold(): number {
+  if (typeof window === 'undefined') return DEFAULT_AUTOHIDE_THRESHOLD;
+  try {
+    const raw = localStorage.getItem(LOCAL_AUTOHIDE_THRESHOLD_KEY);
+    if (!raw) return DEFAULT_AUTOHIDE_THRESHOLD;
+    const val = parseInt(raw, 10);
+    return isNaN(val) || val < 1 ? DEFAULT_AUTOHIDE_THRESHOLD : val;
+  } catch {
+    return DEFAULT_AUTOHIDE_THRESHOLD;
+  }
+}
+
+/**
+ * Updates the auto-hide threshold (admin only).
+ */
+export function setAutoHideThreshold(threshold: number): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const safeVal = Math.max(1, Math.min(20, Math.round(threshold)));
+    localStorage.setItem(LOCAL_AUTOHIDE_THRESHOLD_KEY, safeVal.toString());
+    window.dispatchEvent(
+      new CustomEvent('autohide-threshold-changed', { detail: { threshold: safeVal } })
+    );
+  } catch {
+    // Ignore storage quota
+  }
+}
+
+/**
+ * Gets hidden comment IDs map from localStorage.
+ */
+export function getHiddenCommentIds(): Set<string> {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const raw = localStorage.getItem(LOCAL_HIDDEN_COMMENTS_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    return new Set(Array.isArray(arr) ? arr : []);
+  } catch {
+    return new Set();
+  }
+}
+
+/**
+ * Saves hidden comment IDs map to localStorage.
+ */
+export function saveHiddenCommentIds(ids: Set<string>): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(LOCAL_HIDDEN_COMMENTS_KEY, JSON.stringify(Array.from(ids)));
+  } catch {
+    // Ignore storage quota
+  }
+}
+
+/**
+ * Toggles a comment's hidden status.
+ */
+export function toggleCommentStatus(
+  commentId: string,
+  newStatus: 'live' | 'hidden'
+): { success: boolean; commentId: string; status: 'live' | 'hidden' } {
+  const hidden = getHiddenCommentIds();
+  if (newStatus === 'hidden') {
+    hidden.add(commentId);
+  } else {
+    hidden.delete(commentId);
+  }
+  saveHiddenCommentIds(hidden);
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent('comment-status-changed', {
+        detail: { commentId, status: newStatus },
+      })
+    );
+  }
+
+  return { success: true, commentId, status: newStatus };
+}
+
+/**
+ * Pure function: Determines whether content should be auto-hidden based on pending reports.
+ */
+export function shouldAutoHide(pendingReportCount: number, threshold: number): boolean {
+  return pendingReportCount >= threshold;
+}
+
+/**
  * Submits a new report on a post or comment.
+ * If reports reach the auto-hide threshold, automatically hides the content pending admin review.
  */
 export async function submitReport(params: {
   reporterId: string;
@@ -217,7 +313,13 @@ export async function submitReport(params: {
   targetTitle?: string | null;
   targetAuthorPersona?: string | null;
   targetAuthorRealName?: string | null;
-}): Promise<{ success: boolean; report?: EnrichedReport; error?: string }> {
+}): Promise<{
+  success: boolean;
+  report?: EnrichedReport;
+  autoHidden?: boolean;
+  reportCount?: number;
+  error?: string;
+}> {
   const {
     reporterId,
     postId,
@@ -258,7 +360,48 @@ export async function submitReport(params: {
   const updated = [newReport, ...current];
   saveLocalReports(updated);
 
-  // 2. Persist to Supabase if available
+  // 2. Count pending reports for this exact target
+  const targetPendingReports = updated.filter((r) => {
+    if (r.status !== 'pending') return false;
+    if (postId && r.post_id === postId) return true;
+    if (commentId && r.comment_id === commentId) return true;
+    return false;
+  });
+
+  const threshold = getAutoHideThreshold();
+  let wasAutoHidden = false;
+
+  // 3. Auto-hide if pending reports reach threshold
+  if (shouldAutoHide(targetPendingReports.length, threshold)) {
+    wasAutoHidden = true;
+    if (postId) {
+      await togglePostStatus(postId, 'hidden');
+    } else if (commentId) {
+      toggleCommentStatus(commentId, 'hidden');
+    }
+
+    // Mark reports as auto_hidden
+    const markedReports = updated.map((r) => {
+      const isTarget = (postId && r.post_id === postId) || (commentId && r.comment_id === commentId);
+      return isTarget ? { ...r, auto_hidden: true, post_status: 'hidden' as const } : r;
+    });
+    saveLocalReports(markedReports);
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('content-autohidden', {
+          detail: {
+            targetType: postId ? 'post' : 'comment',
+            targetId: postId || commentId,
+            reportCount: targetPendingReports.length,
+            threshold,
+          },
+        })
+      );
+    }
+  }
+
+  // 4. Persist to Supabase if available
   if (supabase && (!postId || !postId.startsWith('seed-')) && (!commentId || !commentId.startsWith('c-seed-'))) {
     try {
       await supabase.from('reports').insert({
@@ -279,7 +422,43 @@ export async function submitReport(params: {
     window.dispatchEvent(new CustomEvent('reports-updated', { detail: { reportId } }));
   }
 
-  return { success: true, report: newReport };
+  return {
+    success: true,
+    report: newReport,
+    autoHidden: wasAutoHidden,
+    reportCount: targetPendingReports.length,
+  };
+}
+
+/**
+ * Admin action: Dismisses all reports against a post or comment and restores it to live status.
+ */
+export async function dismissAllReportsAndRestore(
+  targetType: 'post' | 'comment',
+  targetId: string
+): Promise<{ success: boolean }> {
+  // 1. Mark all reports for this target as dismissed
+  const reports = getLocalReports();
+  const updated = reports.map((r) => {
+    const isTarget =
+      (targetType === 'post' && r.post_id === targetId) ||
+      (targetType === 'comment' && r.comment_id === targetId);
+    return isTarget ? { ...r, status: 'dismissed' as const, post_status: 'live' as const, auto_hidden: false } : r;
+  });
+  saveLocalReports(updated);
+
+  // 2. Restore live status
+  if (targetType === 'post') {
+    await togglePostStatus(targetId, 'live');
+  } else {
+    toggleCommentStatus(targetId, 'live');
+  }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('reports-updated', { detail: { targetId, restored: true } }));
+  }
+
+  return { success: true };
 }
 
 /**

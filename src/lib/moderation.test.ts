@@ -7,6 +7,7 @@ import {
   SEED_REPORTS,
   SEED_PERSONAS_DIRECTORY,
   getLocalReports,
+  shouldAutoHide,
 } from './moderation';
 import { ReportReason } from '../types';
 
@@ -56,3 +57,12 @@ test('SEED_PERSONAS_DIRECTORY maps personas to real names for admin unmasking', 
   assert.ok(inspector);
   assert.strictEqual(inspector.real_name, 'Joy Wambui');
 });
+
+test('shouldAutoHide correctly evaluates report threshold', () => {
+  assert.strictEqual(shouldAutoHide(1, 3), false);
+  assert.strictEqual(shouldAutoHide(2, 3), false);
+  assert.strictEqual(shouldAutoHide(3, 3), true);
+  assert.strictEqual(shouldAutoHide(5, 3), true);
+  assert.strictEqual(shouldAutoHide(2, 2), true);
+});
+

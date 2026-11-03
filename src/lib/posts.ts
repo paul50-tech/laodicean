@@ -8,6 +8,7 @@ import { Post, PostType, FeedPost, FeedFilter, ReactionCounts, EventData, UserRo
 import { rankCampusFeed } from './feedRanking';
 import { addPostToPendingQueue } from './guestBloggers';
 import { saveOfflineFeedCache, getOfflineFeedCache } from './pwaHelpers';
+import { containsBannedWords } from './bannedWords';
 
 export const DEFAULT_COMMUNITY_SLUG = 'juja';
 
@@ -62,14 +63,21 @@ export function truncateTeaser(
 }
 
 /**
- * Filters feed posts by chip category.
+ * Filters feed posts by chip category and community.
  */
 export function filterFeedPosts(
   posts: FeedPost[],
-  filter: FeedFilter
+  filter: FeedFilter,
+  communitySlug?: string
 ): FeedPost[] {
-  if (filter === 'all') return posts;
-  return posts.filter((post) => post.post_type === filter);
+  let result = posts;
+  if (communitySlug && communitySlug !== 'all') {
+    result = result.filter(
+      (post) => (post.community_slug || 'juja').toLowerCase() === communitySlug.toLowerCase()
+    );
+  }
+  if (filter === 'all') return result;
+  return result.filter((post) => post.post_type === filter);
 }
 
 /**
@@ -87,6 +95,16 @@ export function validatePostInput(params: {
   const { postType, title, body, hasImage, eventDate, eventPlace, eventData } = params;
   const trimmedBody = (body || '').trim();
   const trimmedTitle = (title || '').trim();
+
+  // Banned Words check across title and body
+  const textToCheck = `${trimmedTitle} ${trimmedBody}`;
+  const bannedCheck = containsBannedWords(textToCheck);
+  if (bannedCheck.hasBannedWord) {
+    return {
+      isValid: false,
+      error: `Your post contains restricted word or phrase "${bannedCheck.matchedWord}". Please follow Juja community rules.`,
+    };
+  }
 
   if (trimmedTitle.length > 150) {
     return {
@@ -608,6 +626,145 @@ export const SEED_JUJA_POSTS: FeedPost[] = [
     reactions_count: { laugh: 154, relatable: 182, fire: 62, total: 398 },
     comments_count: 73,
   },
+  // Rongai (MMU & CUEA) posts
+  {
+    id: 'seed-rongai-1',
+    community_id: 'community-rongai',
+    community_name: 'Rongai (MMU & CUEA)',
+    community_slug: 'rongai',
+    post_type: 'mushene',
+    title: 'The Rongai Matatu Decibel Face-Off on Magadi Road',
+    body: 'Two nganyas pulled up side by side at Maasai Lodge stage this morning and started playing contrasting gengetone tracks with enough bass to register on seismic sensors at the geology department. The bus conductor offered free earplugs to first years.',
+    is_persona: true,
+    persona_name: '@rongai_sound_clash',
+    persona_avatar: '🦁',
+    author_role: 'user',
+    status: 'live',
+    created_at: new Date(Date.now() - 1000 * 60 * 35).toISOString(),
+    updated_at: new Date(Date.now() - 1000 * 60 * 35).toISOString(),
+    reactions_count: { laugh: 89, relatable: 67, fire: 42, total: 198 },
+    comments_count: 31,
+  },
+  {
+    id: 'seed-rongai-2',
+    community_id: 'community-rongai',
+    community_name: 'Rongai (MMU & CUEA)',
+    community_slug: 'rongai',
+    post_type: 'poll',
+    title: 'Best Friday Sunset Hangout Spot in Rongai',
+    body: 'Where is the prime comrades chill spot after a long week of media lab projects and cat tests?',
+    is_persona: false,
+    author_real_name: 'Cyrus Maina',
+    author_role: 'moderator',
+    status: 'live',
+    created_at: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
+    updated_at: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
+    reactions_count: { laugh: 18, relatable: 94, fire: 56, total: 168 },
+    comments_count: 24,
+    poll_data: {
+      id: 'poll-rongai-sunset',
+      post_id: 'seed-rongai-2',
+      question: 'Where is the best Friday sunset hangout spot in Rongai?',
+      options: [
+        { id: 'r-opt-1', poll_id: 'poll-rongai-sunset', option_text: 'MMU Gorge Viewpoint Gazebo', position: 1, votes_count: 142, percentage: 48 },
+        { id: 'r-opt-2', poll_id: 'poll-rongai-sunset', option_text: 'Silole Sanctuary Picnic Cliff', position: 2, votes_count: 88, percentage: 30 },
+        { id: 'r-opt-3', poll_id: 'poll-rongai-sunset', option_text: 'Maasai Lodge River Bridge', position: 3, votes_count: 65, percentage: 22 },
+      ],
+      total_votes: 295,
+      user_voted_option_id: null,
+    },
+  },
+  {
+    id: 'seed-rongai-3',
+    community_id: 'community-rongai',
+    community_name: 'Rongai (MMU & CUEA)',
+    community_slug: 'rongai',
+    post_type: 'photo',
+    title: 'Golden Hour at the MMU Campus Gorge Trail',
+    body: 'Took the drone out right after the afternoon multimedia production class. The sunset hitting the Nairobi National Park gorge ridge is magical. Comrades, make sure to hike this trail before graduating!',
+    image_url: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=900&q=80',
+    is_persona: true,
+    persona_name: '@camera_jedi',
+    persona_avatar: '📸',
+    author_role: 'user',
+    status: 'live',
+    created_at: new Date(Date.now() - 1000 * 60 * 240).toISOString(),
+    updated_at: new Date(Date.now() - 1000 * 60 * 240).toISOString(),
+    reactions_count: { laugh: 5, relatable: 48, fire: 135, total: 188 },
+    comments_count: 19,
+  },
+  // Madaraka (Strathmore) posts
+  {
+    id: 'seed-madaraka-1',
+    community_id: 'community-madaraka',
+    community_name: 'Madaraka (Strathmore)',
+    community_slug: 'madaraka',
+    post_type: 'story',
+    title: 'Strathmore Tech & Fintech Pitch Marathon 2026',
+    body: 'Today 14 student fintech teams pitched cross-border mobile payment and student micro-investing platforms to local venture capitalists at the SBS Auditorium. Over 1.5M KES in pilot grants were awarded to student founders.',
+    is_persona: false,
+    author_real_name: 'Grace Ndinda',
+    author_role: 'moderator',
+    status: 'live',
+    created_at: new Date(Date.now() - 1000 * 60 * 90).toISOString(),
+    updated_at: new Date(Date.now() - 1000 * 60 * 90).toISOString(),
+    reactions_count: { laugh: 12, relatable: 78, fire: 110, total: 200 },
+    comments_count: 22,
+  },
+  {
+    id: 'seed-madaraka-2',
+    community_id: 'community-madaraka',
+    community_name: 'Madaraka (Strathmore)',
+    community_slug: 'madaraka',
+    post_type: 'mushene',
+    title: 'SBS Cafeteria Chapo vs Ole Sangale Java Reality',
+    body: 'Every business student starts the semester swearing they will only eat healthy at the cafeteria salad bar. By week 4 of advanced econometrics, everyone is surviving on double chapos and instant coffee in the study pods.',
+    is_persona: true,
+    persona_name: '@strath_analyst',
+    persona_avatar: '💼',
+    author_role: 'user',
+    status: 'live',
+    created_at: new Date(Date.now() - 1000 * 60 * 180).toISOString(),
+    updated_at: new Date(Date.now() - 1000 * 60 * 180).toISOString(),
+    reactions_count: { laugh: 85, relatable: 92, fire: 24, total: 201 },
+    comments_count: 36,
+  },
+  // Parklands (UoN Law) posts
+  {
+    id: 'seed-parklands-1',
+    community_id: 'community-parklands',
+    community_name: 'Parklands (UoN Law)',
+    community_slug: 'parklands',
+    post_type: 'story',
+    title: 'Parklands Law Moot Court Championship: Constitutional Review',
+    body: 'The 2026 All-Kenya Moot Court preliminaries commenced today at the Parklands Appellate Moot Courtroom. The case studies digital surveillance privacy rights versus public security doctrine. High-caliber advocacy on display from 2nd and 3rd year barristers!',
+    is_persona: false,
+    author_real_name: 'Kevin Omondi',
+    author_role: 'moderator',
+    status: 'live',
+    created_at: new Date(Date.now() - 1000 * 60 * 75).toISOString(),
+    updated_at: new Date(Date.now() - 1000 * 60 * 75).toISOString(),
+    reactions_count: { laugh: 8, relatable: 104, fire: 96, total: 208 },
+    comments_count: 28,
+  },
+  {
+    id: 'seed-parklands-2',
+    community_id: 'community-parklands',
+    community_name: 'Parklands (UoN Law)',
+    community_slug: 'parklands',
+    post_type: 'mushene',
+    title: 'The Mechanical Keyboard Comrade on the 3rd Floor Quiet Zone',
+    body: 'To the esteemed learned comrade typing legal briefs with blue mechanical clicky switches in the quiet research alcove: your arguments may be persuasive, but your decibel level is an actionable nuisance under common law torts.',
+    is_persona: true,
+    persona_name: '@learned_comrade',
+    persona_avatar: '⚖️',
+    author_role: 'user',
+    status: 'live',
+    created_at: new Date(Date.now() - 1000 * 60 * 150).toISOString(),
+    updated_at: new Date(Date.now() - 1000 * 60 * 150).toISOString(),
+    reactions_count: { laugh: 112, relatable: 76, fire: 34, total: 222 },
+    comments_count: 41,
+  },
 ];
 
 /**
@@ -833,6 +990,7 @@ export async function fetchInfiniteFeed(
     page = 0,
     pageSize = 6,
     filter = 'all',
+    communitySlug,
   } = params;
 
   // If Supabase is available, try fetching real live posts
@@ -845,6 +1003,9 @@ export async function fetchInfiniteFeed(
 
       if (filter && filter !== 'all') {
         query = query.eq('post_type', filter);
+      }
+      if (communitySlug && communitySlug !== 'all') {
+        query = query.eq('community_slug', communitySlug);
       }
 
       const from = page * pageSize;
@@ -958,7 +1119,7 @@ export async function fetchInfiniteFeed(
   // Fallback to offline cached posts or seed posts with intelligent ranking
   const cachedPool = getOfflineFeedCache();
   const sourcePool = cachedPool && cachedPool.length > 0 ? cachedPool : SEED_JUJA_POSTS;
-  const filteredSeed = filterFeedPosts(sourcePool, filter);
+  const filteredSeed = filterFeedPosts(sourcePool, filter, communitySlug);
   const rankedSeed = rankCampusFeed(filteredSeed);
   const start = page * pageSize;
   const end = start + pageSize;

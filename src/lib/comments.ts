@@ -5,6 +5,8 @@
 
 import { supabase } from './supabase';
 import { Comment, CommentWithAuthor, Profile } from '../types';
+import { containsBannedWords } from './bannedWords';
+import { getHiddenCommentIds } from './moderation';
 
 export interface CommentValidationResult {
   isValid: boolean;
@@ -31,6 +33,15 @@ export function validateCommentInput(body: string): CommentValidationResult {
     };
   }
 
+  // Check for banned words
+  const bannedCheck = containsBannedWords(trimmed);
+  if (bannedCheck.hasBannedWord) {
+    return {
+      isValid: false,
+      error: `Your comment contains prohibited word "${bannedCheck.matchedWord}". Please follow Juja community rules.`,
+    };
+  }
+
   return { isValid: true, error: null };
 }
 
@@ -45,10 +56,17 @@ export function buildCommentTree(
     return [];
   }
 
+  const hiddenIds = getHiddenCommentIds();
+
   // Create cloned map to avoid mutating originals
   const commentMap = new Map<string, CommentWithAuthor>();
   flatComments.forEach((c) => {
-    commentMap.set(c.id, { ...c, replies: [] });
+    const isHidden = hiddenIds.has(c.id) || Boolean(c.is_hidden);
+    commentMap.set(c.id, {
+      ...c,
+      is_hidden: isHidden,
+      replies: [],
+    });
   });
 
   const roots: CommentWithAuthor[] = [];

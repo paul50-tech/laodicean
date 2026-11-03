@@ -273,6 +273,31 @@ export function PostDetailPage({
     );
   }
 
+  if (post.status === 'hidden' && currentUserProfile?.role !== 'admin') {
+    return (
+      <div className="bg-amber-50/90 border border-amber-200 rounded-2xl p-6 text-center space-y-4 shadow-xs">
+        <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-800 mx-auto flex items-center justify-center">
+          <ShieldAlert className="w-6 h-6" />
+        </div>
+        <div className="space-y-1.5">
+          <h2 className="font-display text-base font-bold text-amber-950">
+            Post Temporarily Hidden
+          </h2>
+          <p className="text-xs text-amber-800/90 max-w-sm mx-auto leading-relaxed">
+            This campus post has received multiple student reports and has been automatically hidden pending moderation review by Juja campus admins.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onBack}
+          className="px-4 py-2 rounded-xl bg-amber-900 text-white text-xs font-semibold hover:bg-amber-950 transition-colors cursor-pointer"
+        >
+          Back to Juja Campus Feed
+        </button>
+      </div>
+    );
+  }
+
   // Related posts from Juja excluding this one
   const relatedPosts = SEED_JUJA_POSTS.filter((p) => p.id !== post.id).slice(0, 3);
 
@@ -325,6 +350,17 @@ export function PostDetailPage({
 
       {/* Main Post Article Card */}
       <article className="bg-white border border-stone-200/90 rounded-2xl p-5 sm:p-6 shadow-xs space-y-4">
+        {post.status === 'hidden' && currentUserProfile?.role === 'admin' && (
+          <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl flex items-center justify-between gap-2 text-xs text-amber-950 font-medium">
+            <div className="flex items-center gap-2">
+              <ShieldAlert className="w-4 h-4 text-amber-700 shrink-0" />
+              <span>
+                <strong>Admin Notice:</strong> This post is currently <strong>auto-hidden</strong> from students due to community reports.
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* Header: Author Identity & Post Type */}
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">

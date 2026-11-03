@@ -12,10 +12,23 @@ import { fetchProfile, signOut } from './lib/auth';
 import { supabase } from './lib/supabase';
 import { togglePostStatus } from './lib/moderation';
 import { SEED_JUJA_POSTS } from './lib/posts';
-import { Profile, Post, FeedPost, CommentWithAuthor } from './types';
+import { Profile, Post, FeedPost, CommentWithAuthor, Community } from './types';
 import { UserPlus, Sparkles, ShieldCheck, Key, Plus } from 'lucide-react';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { OfflineIndicator } from './components/OfflineIndicator';
+import { YourCommunitiesRow } from './components/YourCommunitiesRow';
+import { CommunityHeader } from './components/CommunityHeader';
+import {
+  getAllCommunities,
+  getCommunityBySlug,
+  getUserJoinedCommunitySlugs,
+  joinCommunity,
+  leaveCommunity,
+  isCommunityJoined,
+  getActiveCommunitySlug,
+  setActiveCommunitySlug,
+  parseCommunitySlugFromUrl,
+} from './lib/communities';
 
 // Code-split heavy modals to ensure lean initial bundle on weak connections
 const MemeEditorModal = lazy(() =>
@@ -29,6 +42,18 @@ const ReportModal = lazy(() =>
 );
 const OnboardingModal = lazy(() =>
   import('./components/OnboardingModal').then((m) => ({ default: m.OnboardingModal }))
+);
+const AboutModal = lazy(() =>
+  import('./components/AboutModal').then((m) => ({ default: m.AboutModal }))
+);
+const DiscoverCommunitiesModal = lazy(() =>
+  import('./components/DiscoverCommunitiesModal').then((m) => ({ default: m.DiscoverCommunitiesModal }))
+);
+const RequestCommunityModal = lazy(() =>
+  import('./components/RequestCommunityModal').then((m) => ({ default: m.RequestCommunityModal }))
+);
+const CommunityModToolsModal = lazy(() =>
+  import('./components/CommunityModToolsModal').then((m) => ({ default: m.CommunityModToolsModal }))
 );
 
 /**
@@ -78,10 +103,57 @@ export default function App() {
   const [activePostId, setActivePostId] = useState<string | null>(parsePostIdFromUrl);
   const [activePost, setActivePost] = useState<FeedPost | null>(null);
 
+  // Multi-community state
+  const [allCommunities, setAllCommunities] = useState<Community[]>(getAllCommunities);
+  const [joinedSlugs, setJoinedSlugs] = useState<string[]>(getUserJoinedCommunitySlugs);
+  const [activeSlug, setActiveSlug] = useState<string>(() => parseCommunitySlugFromUrl() || getActiveCommunitySlug());
+  const [discoverOpen, setDiscoverOpen] = useState(false);
+  const [requestCommunityOpen, setRequestCommunityOpen] = useState(false);
+  const [modToolsOpen, setModToolsOpen] = useState(false);
+
+  const activeCommunity =
+    getCommunityBySlug(activeSlug) ||
+    allCommunities.find((c) => c.slug === activeSlug) ||
+    allCommunities[0];
+
   // Moderation & Admin Dashboard state
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [reportTarget, setReportTarget] = useState<ReportTargetInfo | null>(null);
   const [adminDashboardOpen, setAdminDashboardOpen] = useState(false);
+  const [aboutModalOpen, setAboutModalOpen] = useState(false);
+
+  const handleSelectCommunity = (slug: string) => {
+    setActiveCommunitySlug(slug);
+    setActiveSlug(slug);
+    setActivePostId(null);
+    setActivePost(null);
+    window.history.pushState(null, '', slug === 'juja' ? '/' : `/c/${encodeURIComponent(slug)}`);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleToggleJoin = (slug: string) => {
+    if (isCommunityJoined(slug)) {
+      leaveCommunity(slug);
+    } else {
+      joinCommunity(slug);
+    }
+    setJoinedSlugs(getUserJoinedCommunitySlugs());
+    setAllCommunities(getAllCommunities());
+  };
+
+  const handleCommunityUpdated = (_updated: Community) => {
+    setAllCommunities(getAllCommunities());
+  };
+
+  // Listen to approved community broadcasts from AdminDeck
+  useEffect(() => {
+    const handleApproved = () => {
+      setAllCommunities(getAllCommunities());
+      setJoinedSlugs(getUserJoinedCommunitySlugs());
+    };
+    window.addEventListener('community-approved', handleApproved);
+    return () => window.removeEventListener('community-approved', handleApproved);
+  }, []);
 
   const handleRequireAuth = (message: string) => {
     setAuthPromptMessage(message);
@@ -128,6 +200,11 @@ export default function App() {
       if (!id) {
         setActivePost(null);
       }
+      const cSlug = parseCommunitySlugFromUrl();
+      if (cSlug) {
+        setActiveSlug(cSlug);
+        setActiveCommunitySlug(cSlug);
+      }
     };
 
     window.addEventListener('popstate', handleLocationChange);
@@ -152,7 +229,7 @@ export default function App() {
   const handleBackToFeed = () => {
     setActivePostId(null);
     setActivePost(null);
-    window.history.pushState(null, '', '/');
+    window.history.pushState(null, '', activeSlug === 'juja' ? '/' : `/c/${encodeURIComponent(activeSlug)}`);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -236,9 +313,9 @@ export default function App() {
     // Immediately build a FeedPost item to render into live feed without delay
     const newFeedItem: FeedPost = {
       id: newPost.id,
-      community_id: newPost.community_id,
-      community_name: 'Juja',
-      community_slug: 'juja',
+      community_id: newPost.community_id || activeCommunity.id,
+      community_name: newPost.community_name || activeCommunity.name,
+      community_slug: newPost.community_slug || activeCommunity.slug,
       post_type: newPost.post_type,
       title: newPost.title,
       body: newPost.body,
@@ -272,6 +349,7 @@ export default function App() {
         onOpenProfile={() => setOnboardingOpen(true)}
         onNavigateHome={handleBackToFeed}
         onOpenAdmin={() => setAdminDashboardOpen(true)}
+        onOpenAbout={() => setAboutModalOpen(true)}
       />
 
       {/* Main mobile-first container */}
@@ -289,21 +367,27 @@ export default function App() {
             onReportComment={handleReportComment}
           />
         ) : (
-          /* Standard Juja Campus Feed & Community Hub */
+          /* Multi-Campus Hub & Feed */
           <>
-            {/* Intro */}
-            <section className="space-y-1.5">
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-800">
-                <Sparkles className="w-4 h-4" aria-hidden="true" />
-                <span>Juja Campus Community Hub</span>
-              </div>
-              <h1 className="font-display text-2xl font-bold tracking-tight text-zinc-950">
-                Laodicean
-              </h1>
-              <p className="text-xs sm:text-sm text-zinc-600 leading-relaxed">
-                Campus stories, photos, and mushene from Juja (JKUAT). Post with your verified name or anonymously through your campus persona.
-              </p>
-            </section>
+            {/* "Your communities" Row */}
+            <YourCommunitiesRow
+              communities={allCommunities}
+              joinedSlugs={joinedSlugs}
+              activeSlug={activeSlug}
+              onSelectCommunity={handleSelectCommunity}
+              onOpenDiscover={() => setDiscoverOpen(true)}
+              onRequestCommunity={() => setRequestCommunityOpen(true)}
+            />
+
+            {/* Active Community Banner & Header */}
+            <CommunityHeader
+              community={activeCommunity}
+              currentUserProfile={profile}
+              isJoined={isCommunityJoined(activeSlug)}
+              onToggleJoin={() => handleToggleJoin(activeSlug)}
+              onOpenRules={() => setAboutModalOpen(true)}
+              onOpenModTools={() => setModToolsOpen(true)}
+            />
 
             {/* PWA Home Screen Install Banner */}
             <PWAInstallButton variant="banner" />
@@ -312,21 +396,21 @@ export default function App() {
             <div className="bg-white border border-stone-200/90 rounded-2xl p-3.5 shadow-xs flex items-center justify-between gap-3">
               <div className="flex items-center gap-2.5 min-w-0">
                 <div className="w-9 h-9 rounded-full bg-emerald-100/70 text-emerald-800 flex items-center justify-center text-sm shrink-0 border border-emerald-200">
-                  {profile?.persona_avatar || '🎓'}
+                  {profile?.persona_avatar || activeCommunity.icon || '🎓'}
                 </div>
                 <div className="min-w-0">
                   <p className="text-xs font-semibold text-zinc-900 truncate">
                     {profile ? (
-                      <>Ready to post in Juja, {profile.real_name}?</>
+                      <>Ready to post in {activeCommunity.name}, {profile.real_name}?</>
                     ) : (
-                      <>Have something to share in Juja?</>
+                      <>Have something to share in {activeCommunity.name}?</>
                     )}
                   </p>
                   <p className="text-[11px] text-zinc-500 truncate">
                     {profile?.persona_name ? (
                       <>Post as {profile.real_name} or {profile.persona_name}</>
                     ) : (
-                      <>Tap to compose a Story or Photo</>
+                      <>Tap to compose a Story, Meme, or Photo</>
                     )}
                   </p>
                 </div>
@@ -365,16 +449,18 @@ export default function App() {
             <FeedSection
               newlyCreatedPost={lastCreatedPost}
               currentUserProfile={profile}
+              activeCommunity={activeCommunity}
               onRequireAuth={handleRequireAuth}
               onSelectPost={handleNavigateToPost}
               onReportPost={handleReportPost}
               onReportComment={handleReportComment}
               onToggleHidePost={handleToggleHidePost}
+              onSelectCommunity={handleSelectCommunity}
               onOpenComposer={() => {
                 if (profile) {
                   setComposerOpen(true);
                 } else {
-                  handleRequireAuth('Sign in with your campus account to create a post!');
+                  handleRequireAuth(`Sign in with your campus account to create a post in ${activeCommunity.name}!`);
                 }
               }}
             />
@@ -464,6 +550,34 @@ export default function App() {
             </div>
           </div>
         </section>
+
+        {/* Community Footer Links */}
+        <footer className="pt-2 pb-6 border-t border-stone-200/60 flex flex-wrap items-center justify-between gap-3 text-xs text-stone-500">
+          <p>© {new Date().getFullYear()} Laodicean • Built for Juja & JKUAT</p>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setAboutModalOpen(true)}
+              className="text-emerald-800 hover:text-emerald-900 font-semibold hover:underline cursor-pointer"
+            >
+              📜 5 Golden Rules & Safety
+            </button>
+            <span>•</span>
+            <button
+              type="button"
+              onClick={() => {
+                if (profile?.role === 'admin') {
+                  setAdminDashboardOpen(true);
+                } else {
+                  setAboutModalOpen(true);
+                }
+              }}
+              className="text-stone-600 hover:text-stone-900 cursor-pointer"
+            >
+              Moderation Policy
+            </button>
+          </div>
+        </footer>
       </main>
 
       {/* Floating Action Button for Post Creation */}
@@ -475,6 +589,7 @@ export default function App() {
       <PostComposerModal
         isOpen={composerOpen}
         profile={profile}
+        community={activeCommunity}
         initialPostType={composerInitialMeme ? 'meme' : undefined}
         initialMemeResult={composerInitialMeme}
         onClose={() => {
@@ -504,7 +619,7 @@ export default function App() {
               if (profile) {
                 setComposerOpen(true);
               } else {
-                handleRequireAuth('Sign in with your campus account to post your meme to the Juja feed!');
+                handleRequireAuth(`Sign in with your campus account to post your meme to the ${activeCommunity.name} feed!`);
               }
             }}
           />
@@ -539,6 +654,55 @@ export default function App() {
             onClose={() => setAdminDashboardOpen(false)}
             onPostStatusChange={handleToggleHidePost}
             onNavigateToPost={handleNavigateToPost}
+          />
+        )}
+
+        {aboutModalOpen && (
+          <AboutModal
+            isOpen={aboutModalOpen}
+            community={activeCommunity}
+            onClose={() => setAboutModalOpen(false)}
+          />
+        )}
+
+        {discoverOpen && (
+          <DiscoverCommunitiesModal
+            isOpen={discoverOpen}
+            communities={allCommunities}
+            joinedSlugs={joinedSlugs}
+            activeSlug={activeSlug}
+            onClose={() => setDiscoverOpen(false)}
+            onSelectCommunity={handleSelectCommunity}
+            onToggleJoin={handleToggleJoin}
+            onRequestCommunity={() => {
+              setDiscoverOpen(false);
+              setRequestCommunityOpen(true);
+            }}
+          />
+        )}
+
+        {requestCommunityOpen && (
+          <RequestCommunityModal
+            isOpen={requestCommunityOpen}
+            currentUserProfile={profile}
+            onClose={() => setRequestCommunityOpen(false)}
+            onRequestSubmitted={() => {
+              setAllCommunities(getAllCommunities());
+            }}
+          />
+        )}
+
+        {modToolsOpen && (
+          <CommunityModToolsModal
+            isOpen={modToolsOpen}
+            community={activeCommunity}
+            currentUserProfile={profile}
+            communityPosts={(lastCreatedPost ? [lastCreatedPost, ...SEED_JUJA_POSTS] : SEED_JUJA_POSTS).filter(
+              (p) => (p.community_slug || 'juja').toLowerCase() === activeCommunity.slug.toLowerCase()
+            )}
+            onClose={() => setModToolsOpen(false)}
+            onCommunityUpdated={handleCommunityUpdated}
+            onPostStatusToggled={handleToggleHidePost}
           />
         )}
       </Suspense>

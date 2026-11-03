@@ -28,18 +28,47 @@ export interface GuestBloggerAccount {
   posts_count?: number;
 }
 
-export type CommunityStatus = 'pending' | 'approved';
+export type CommunityStatus = 'pending' | 'approved' | 'rejected';
 
 export interface Community {
   id: string;
   name: string;
   slug: string;
-  banner?: string | null;
+  tagline?: string;
   description: string;
+  color?: string;
+  accent_color?: string;
+  icon?: string;
+  banner?: string | null;
   rules: string[];
   status: CommunityStatus;
+  member_count: number;
   created_by?: string | null;
+  creator_name?: string | null;
+  creator_persona?: string | null;
+  moderator_ids: string[];
   created_at: string;
+  is_default?: boolean;
+}
+
+export interface CommunityRequest {
+  id: string;
+  name: string;
+  slug: string;
+  tagline: string;
+  description: string;
+  color: string;
+  icon: string;
+  banner?: string | null;
+  rules: string[];
+  requester_id: string;
+  requester_name: string;
+  requester_persona?: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  rejection_reason?: string | null;
+  created_at: string;
+  reviewed_at?: string | null;
+  reviewed_by?: string | null;
 }
 
 export interface CommunityMember {
@@ -219,6 +248,8 @@ export interface CommentWithAuthor extends Comment {
   author_role?: UserRole;
   replies?: CommentWithAuthor[];
   badges?: ProfileBadgeType[];
+  is_hidden?: boolean;
+  auto_hidden?: boolean;
 }
 
 export type ReactionType = 'laugh' | 'relatable' | 'fire';

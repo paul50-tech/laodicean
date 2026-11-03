@@ -1,5 +1,5 @@
 import React from 'react';
-import { User, Sparkles, ShieldAlert } from 'lucide-react';
+import { User, Sparkles, ShieldAlert, Shield } from 'lucide-react';
 import { Profile } from '../types';
 import { PWAInstallButton } from './PWAInstallButton';
 
@@ -10,6 +10,7 @@ interface TopBarProps {
   onOpenProfile: () => void;
   onNavigateHome?: () => void;
   onOpenAdmin?: () => void;
+  onOpenAbout?: () => void;
 }
 
 /**
@@ -23,6 +24,7 @@ export const TopBar: React.FC<TopBarProps> = ({
   onOpenProfile,
   onNavigateHome,
   onOpenAdmin,
+  onOpenAbout,
 }) => {
   const isAdmin =
     profile?.role === 'admin' ||
@@ -49,8 +51,21 @@ export const TopBar: React.FC<TopBarProps> = ({
           </span>
         </div>
 
-        {/* User Session, PWA Install & Admin Action */}
-        <div className="flex items-center gap-2">
+        {/* User Session, PWA Install, Rules & Admin Action */}
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* Juja Community Rules Button */}
+          {onOpenAbout && (
+            <button
+              type="button"
+              onClick={onOpenAbout}
+              className="min-h-[38px] px-2.5 py-1 rounded-xl bg-stone-100 hover:bg-stone-200/80 text-zinc-700 text-xs font-semibold inline-flex items-center gap-1 transition-colors cursor-pointer"
+              title="Juja Community Rules & About Page"
+            >
+              <Shield className="w-3.5 h-3.5 text-emerald-800 shrink-0" />
+              <span>Rules</span>
+            </button>
+          )}
+
           {/* PWA Install Button */}
           <PWAInstallButton variant="header" />
 

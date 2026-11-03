@@ -4,6 +4,7 @@ import {
   calculatePollPercentages,
   validatePollInput,
   recordLocalPollVote,
+  detectRealPersonInPoll,
   SEED_JUJA_POLL_DATA,
 } from './polls';
 import { PollWithResults } from '../types';
@@ -153,3 +154,39 @@ test('recordLocalPollVote prevents double voting on the same poll', () => {
   assert.equal(attempt.success, false);
   assert.ok(attempt.error?.includes('already voted'));
 });
+
+test('detectRealPersonInPoll detects targeted ranking and named individuals', () => {
+  const check1 = detectRealPersonInPoll('Who is the prettiest girl in Hall 3?');
+  assert.equal(check1.detected, true);
+  assert.ok(check1.reason?.includes('Rule #3'));
+
+  const check2 = detectRealPersonInPoll('Who is the worst lecturer in mechanical engineering?');
+  assert.equal(check2.detected, true);
+
+  const check3 = detectRealPersonInPoll('Best place to study for exams', ['Dr. Kamau Office', 'Library']);
+  assert.equal(check3.detected, true);
+
+  const clean = detectRealPersonInPoll('Where is the best late-night student food spot in Juja?', [
+    'Gate A Smokie',
+    'Gate C Chapo',
+  ]);
+  assert.equal(clean.detected, false);
+});
+
+test('validatePollInput rejects polls that target real individuals or unconfirmed checkbox', () => {
+  const badPoll = validatePollInput({
+    question: 'Who is the worst lecturer in engineering?',
+    options: ['Option A', 'Option B'],
+  });
+  assert.equal(badPoll.isValid, false);
+  assert.ok(badPoll.error?.includes('Rule #3'));
+
+  const unconfirmed = validatePollInput({
+    question: 'Best study spot in Juja campus?',
+    options: ['Science Complex', 'Library'],
+    confirmNoRealPeople: false,
+  });
+  assert.equal(unconfirmed.isValid, false);
+  assert.ok(unconfirmed.error?.includes('confirm'));
+});
+

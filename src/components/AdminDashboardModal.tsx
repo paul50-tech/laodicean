@@ -23,6 +23,7 @@ import {
   AlertCircle,
   ThumbsUp,
   Filter,
+  Plus,
 } from 'lucide-react';
 import { Profile, FeedPost, ReportStatus, PostStatus, UserRole, GuestBloggerAccount } from '../types';
 import {
@@ -33,7 +34,17 @@ import {
   togglePostStatus,
   updateReportStatus,
   getHiddenPostIds,
+  getAutoHideThreshold,
+  setAutoHideThreshold,
+  dismissAllReportsAndRestore,
 } from '../lib/moderation';
+import {
+  getBannedWords,
+  addBannedWord,
+  removeBannedWord,
+  resetBannedWords,
+  containsBannedWords,
+} from '../lib/bannedWords';
 import { SEED_JUJA_POSTS } from '../lib/posts';
 import {
   getLocalGuestBloggers,
@@ -43,6 +54,14 @@ import {
   approvePendingPost,
   sendBackPendingPost,
 } from '../lib/guestBloggers';
+import {
+  getCommunityRequests,
+  approveCommunityRequest,
+  rejectCommunityRequest,
+  getAllCommunities,
+  CommunityRequest,
+} from '../lib/communities';
+import { Community } from '../types';
 
 interface AdminDashboardModalProps {
   isOpen: boolean;
@@ -61,15 +80,31 @@ export function AdminDashboardModal({
   onPostStatusChange,
   onNavigateToPost,
 }: AdminDashboardModalProps) {
-  const [activeTab, setActiveTab] = useState<'queue' | 'guest_bloggers' | 'reports' | 'personas' | 'posts'>('queue');
+  const [activeTab, setActiveTab] = useState<
+    'queue' | 'guest_bloggers' | 'community_requests' | 'reports' | 'personas' | 'posts' | 'banned_words'
+  >('queue');
   const [reports, setReports] = useState<EnrichedReport[]>([]);
   const [personas, setPersonas] = useState<PersonaIdentityRecord[]>([]);
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
   const [postStatuses, setPostStatuses] = useState<Record<string, 'live' | 'hidden'>>({});
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterReportStatus, setFilterReportStatus] = useState<ReportStatus | 'all'>('all');
+  const [filterReportStatus, setFilterReportStatus] = useState<ReportStatus | 'all' | 'auto_hidden'>('all');
   const [postFilter, setPostFilter] = useState<'all' | 'live' | 'hidden'>('all');
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+
+  // Community Requests & Multi-Campus State
+  const [communityRequests, setCommunityRequests] = useState<CommunityRequest[]>([]);
+  const [approvedCommunities, setApprovedCommunities] = useState<Community[]>([]);
+  const [rejectReasonTargetId, setRejectReasonTargetId] = useState<string | null>(null);
+  const [rejectReasonInput, setRejectReasonInput] = useState('');
+
+  // Banned Words & Auto-Hide Threshold State
+  const [bannedWordsList, setBannedWordsList] = useState<string[]>([]);
+  const [newBannedWordInput, setNewBannedWordInput] = useState('');
+  const [bannedWordError, setBannedWordError] = useState<string | null>(null);
+  const [bannedWordSuccess, setBannedWordSuccess] = useState<string | null>(null);
+  const [thresholdState, setThresholdState] = useState<number>(3);
+  const [testText, setTestText] = useState('');
 
   // Guest Bloggers & Pending Queue state
   const [pendingQueue, setPendingQueue] = useState<FeedPost[]>([]);
@@ -98,6 +133,10 @@ export function AdminDashboardModal({
     setHiddenIds(getHiddenPostIds());
     setPendingQueue(getLocalPendingQueue());
     setGuestBloggers(getLocalGuestBloggers());
+    setBannedWordsList(getBannedWords());
+    setThresholdState(getAutoHideThreshold());
+    setCommunityRequests(getCommunityRequests());
+    setApprovedCommunities(getAllCommunities());
 
     getPersonaDirectory().then((data) => {
       setPersonas(data);
@@ -108,18 +147,28 @@ export function AdminDashboardModal({
       setHiddenIds(getHiddenPostIds());
       setPendingQueue(getLocalPendingQueue());
       setGuestBloggers(getLocalGuestBloggers());
+      setBannedWordsList(getBannedWords());
+      setThresholdState(getAutoHideThreshold());
+      setCommunityRequests(getCommunityRequests());
+      setApprovedCommunities(getAllCommunities());
     };
 
     window.addEventListener('reports-updated', handleSync);
     window.addEventListener('post-status-changed', handleSync);
     window.addEventListener('pending-queue-updated', handleSync);
     window.addEventListener('guest-bloggers-updated', handleSync);
+    window.addEventListener('banned-words-updated', handleSync);
+    window.addEventListener('autohide-threshold-changed', handleSync);
+    window.addEventListener('content-autohidden', handleSync);
 
     return () => {
       window.removeEventListener('reports-updated', handleSync);
       window.removeEventListener('post-status-changed', handleSync);
       window.removeEventListener('pending-queue-updated', handleSync);
       window.removeEventListener('guest-bloggers-updated', handleSync);
+      window.removeEventListener('banned-words-updated', handleSync);
+      window.removeEventListener('autohide-threshold-changed', handleSync);
+      window.removeEventListener('content-autohidden', handleSync);
     };
   }, [isOpen]);
 
@@ -200,6 +249,42 @@ export function AdminDashboardModal({
     setTimeout(() => setCreateBloggerSuccess(null), 4000);
   };
 
+  // Handle Approve Community Request -> Launches community and appoints creator as moderator
+  const handleApproveCommunity = (reqId: string) => {
+    setActionLoadingId(`comm-app-${reqId}`);
+    try {
+      const res = approveCommunityRequest(reqId, currentUserProfile?.id || '00000000-0000-0000-0000-000000000001');
+      if (res.success && res.community) {
+        setCommunityRequests(getCommunityRequests());
+        setApprovedCommunities(getAllCommunities());
+        setNotificationMsg(`🎉 Campus community "${res.community.name}" approved & launched! Creator appointed as moderator.`);
+        window.dispatchEvent(new CustomEvent('community-approved', { detail: { community: res.community } }));
+      } else {
+        setNotificationMsg(`Approval failed: ${res.error || 'Unknown error'}`);
+      }
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  // Handle Reject Community Request with reason
+  const handleRejectCommunity = (reqId: string) => {
+    setActionLoadingId(`comm-rej-${reqId}`);
+    try {
+      const res = rejectCommunityRequest(reqId, rejectReasonInput.trim() || undefined);
+      if (res.success) {
+        setCommunityRequests(getCommunityRequests());
+        setRejectReasonTargetId(null);
+        setRejectReasonInput('');
+        setNotificationMsg(`Community request rejected.`);
+      } else {
+        setNotificationMsg(`Rejection failed: ${res.error || 'Unknown error'}`);
+      }
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
   // Handle Hide / Restore with 1 tap
   const handleToggleHide = async (postId: string, currentStatus?: PostStatus) => {
     const effectiveStatus =
@@ -239,6 +324,64 @@ export function AdminDashboardModal({
     }
   };
 
+  // Handle Add Banned Word
+  const handleAddWord = (e: React.FormEvent) => {
+    e.preventDefault();
+    setBannedWordError(null);
+    setBannedWordSuccess(null);
+    const trimmed = newBannedWordInput.trim().toLowerCase();
+    const res = addBannedWord(trimmed);
+    if (!res.success) {
+      setBannedWordError(res.error || 'Failed to add word');
+      return;
+    }
+    setBannedWordsList(res.words);
+    setNewBannedWordInput('');
+    setBannedWordSuccess(`Added "${trimmed}" to banned words list.`);
+    setTimeout(() => setBannedWordSuccess(null), 3000);
+  };
+
+  // Handle Remove Banned Word
+  const handleRemoveWord = (word: string) => {
+    const res = removeBannedWord(word);
+    setBannedWordsList(res.words);
+    setBannedWordSuccess(`Removed "${word}" from banned words list.`);
+    setTimeout(() => setBannedWordSuccess(null), 3000);
+  };
+
+  // Handle Reset Banned Words
+  const handleResetWords = () => {
+    const defaults = resetBannedWords();
+    setBannedWordsList(defaults);
+    setBannedWordSuccess('Banned words reset to campus defaults.');
+    setTimeout(() => setBannedWordSuccess(null), 3000);
+  };
+
+  // Handle Change Auto-Hide Threshold
+  const handleChangeThreshold = (val: number) => {
+    setAutoHideThreshold(val);
+    setThresholdState(val);
+    setNotificationMsg(`🛡️ Auto-hide threshold updated: items will auto-hide at ${val} reports.`);
+    setTimeout(() => setNotificationMsg(null), 3500);
+  };
+
+  // Handle Restore and Dismiss All Reports for an Auto-Hidden item
+  const handleRestoreAndDismissAll = async (targetType: 'post' | 'comment', targetId: string) => {
+    setActionLoadingId(`restore-all-${targetId}`);
+    try {
+      await dismissAllReportsAndRestore(targetType, targetId);
+      setReports(getLocalReports());
+      setHiddenIds(getHiddenPostIds());
+      setNotificationMsg(`✅ Item restored to live and all reports dismissed.`);
+      setTimeout(() => setNotificationMsg(null), 4000);
+      if (targetType === 'post' && onPostStatusChange) {
+        onPostStatusChange(targetId, 'live');
+      }
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
   // Filtered pending queue
   const filteredQueue = pendingQueue.filter((p) => {
     if (!searchQuery) return true;
@@ -265,7 +408,11 @@ export function AdminDashboardModal({
 
   // Filtered reports
   const filteredReports = reports.filter((r) => {
-    if (filterReportStatus !== 'all' && r.status !== filterReportStatus) return false;
+    if (filterReportStatus === 'auto_hidden') {
+      if (!r.auto_hidden && r.post_status !== 'hidden') return false;
+    } else if (filterReportStatus !== 'all' && r.status !== filterReportStatus) {
+      return false;
+    }
     if (!searchQuery) return true;
     const q = searchQuery.toLowerCase();
     return (
@@ -306,6 +453,7 @@ export function AdminDashboardModal({
 
   const pendingCount = reports.filter((r) => r.status === 'pending').length;
   const queuePendingCount = pendingQueue.filter((p) => p.status === 'pending').length;
+  const pendingCommCount = communityRequests.filter((c) => c.status === 'pending').length;
 
   return (
     <div
@@ -397,6 +545,25 @@ export function AdminDashboardModal({
               </span>
             </button>
 
+            {/* 3. Campus Community Requests Tab */}
+            <button
+              type="button"
+              onClick={() => setActiveTab('community_requests')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
+                activeTab === 'community_requests'
+                  ? 'bg-emerald-700 text-white shadow-xs'
+                  : 'bg-white text-zinc-700 hover:bg-stone-100 border border-stone-200'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Campus Requests</span>
+              {pendingCommCount > 0 && (
+                <span className="ml-1 text-[10px] font-bold bg-white text-emerald-800 px-1.5 py-0.2 rounded-full">
+                  {pendingCommCount}
+                </span>
+              )}
+            </button>
+
             {/* 3. Reports Tab */}
             <button
               type="button"
@@ -442,6 +609,23 @@ export function AdminDashboardModal({
             >
               <FileText className="w-3.5 h-3.5" />
               <span>Feed Posts</span>
+            </button>
+
+            {/* 6. Banned Words & Auto-Moderation Tab */}
+            <button
+              type="button"
+              onClick={() => setActiveTab('banned_words')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
+                activeTab === 'banned_words'
+                  ? 'bg-rose-900 text-white shadow-xs'
+                  : 'bg-white text-zinc-700 hover:bg-stone-100 border border-stone-200'
+              }`}
+            >
+              <ShieldAlert className="w-3.5 h-3.5" />
+              <span>Banned Words & Rules</span>
+              <span className="text-[10px] font-bold bg-stone-100 text-zinc-700 px-1.5 py-0.2 rounded-full">
+                {bannedWordsList.length}
+              </span>
             </button>
           </div>
 
@@ -888,7 +1072,7 @@ export function AdminDashboardModal({
                 Showing {filteredReports.length} {filteredReports.length === 1 ? 'report' : 'reports'}
               </span>
               <div className="flex items-center gap-1">
-                {(['all', 'pending', 'resolved', 'dismissed'] as const).map((status) => (
+                {(['all', 'pending', 'auto_hidden', 'resolved', 'dismissed'] as const).map((status) => (
                   <button
                     key={status}
                     type="button"
@@ -899,79 +1083,109 @@ export function AdminDashboardModal({
                         : 'text-zinc-600 hover:bg-stone-100'
                     }`}
                   >
-                    {status}
+                    {status === 'auto_hidden' ? '🚨 Auto-Hidden' : status}
                   </button>
                 ))}
               </div>
             </div>
 
             <div className="space-y-3">
-              {filteredReports.map((report) => (
-                <div
-                  key={report.id}
-                  className="p-3.5 rounded-xl border border-stone-200 bg-white hover:border-stone-300 transition-all space-y-2.5 shadow-2xs"
-                >
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <div className="flex items-center gap-2">
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-rose-100 text-rose-800 border border-rose-200">
-                        {report.reason}
-                      </span>
-                      <span className="text-[11px] text-zinc-400 font-mono">
-                        Target: {report.target_type}
-                      </span>
+              {filteredReports.map((report) => {
+                const isAutoHidden = report.auto_hidden || report.post_status === 'hidden';
+
+                return (
+                  <div
+                    key={report.id}
+                    className={`p-3.5 rounded-xl border transition-all space-y-2.5 shadow-2xs ${
+                      isAutoHidden ? 'border-amber-300 bg-amber-50/20' : 'border-stone-200 bg-white hover:border-stone-300'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-rose-100 text-rose-800 border border-rose-200">
+                          {report.reason}
+                        </span>
+                        <span className="text-[11px] text-zinc-400 font-mono">
+                          Target: {report.target_type}
+                        </span>
+                        {isAutoHidden && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1">
+                            <AlertTriangle className="w-2.5 h-2.5" />
+                            <span>Auto-Hidden</span>
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-mono text-zinc-500">
+                          {report.target_author_persona || 'Real Identity'}
+                        </span>
+                        <span className="text-zinc-400">→</span>
+                        <span className="text-xs font-bold text-zinc-900 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                          {report.target_author_real_name || 'Verified Author'}
+                        </span>
+                      </div>
                     </div>
 
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs font-mono text-zinc-500">
-                        {report.target_author_persona || 'Real Identity'}
+                    {isAutoHidden && (
+                      <div className="p-2.5 bg-amber-50 rounded-xl border border-amber-200/80 text-amber-950 flex items-center justify-between text-xs">
+                        <span className="font-semibold text-[11px] text-amber-900 flex items-center gap-1">
+                          <ShieldAlert className="w-3.5 h-3.5 text-amber-700" />
+                          <span>This {report.target_type} reached report threshold and was auto-hidden.</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleRestoreAndDismissAll(report.target_type, (report.post_id || report.comment_id)!)}
+                          disabled={actionLoadingId === `restore-all-${report.post_id || report.comment_id}`}
+                          className="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-[10px] font-bold shadow-2xs cursor-pointer inline-flex items-center gap-1"
+                        >
+                          <CheckCircle2 className="w-3 h-3" />
+                          <span>Restore & Dismiss All</span>
+                        </button>
+                      </div>
+                    )}
+
+                    <div className="p-2.5 bg-stone-50 rounded-xl text-xs text-zinc-700 italic border border-stone-200/60">
+                      "{report.target_snippet}"
+                    </div>
+
+                    {report.details && (
+                      <p className="text-[11px] text-zinc-600">
+                        <strong>Reporter Note:</strong> {report.details}
+                      </p>
+                    )}
+
+                    <div className="pt-2 border-t border-stone-100 flex items-center justify-between">
+                      <span className="text-[10px] text-zinc-400">
+                        Reported {new Date(report.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
-                      <span className="text-zinc-400">→</span>
-                      <span className="text-xs font-bold text-zinc-900 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-                        {report.target_author_real_name || 'Verified Author'}
-                      </span>
+
+                      <div className="flex items-center gap-1.5">
+                        {report.status === 'pending' && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleResolveReport(report.id, 'dismissed')}
+                              disabled={actionLoadingId === `report-${report.id}`}
+                              className="px-2.5 py-1 text-xs text-zinc-600 hover:bg-stone-100 rounded-lg cursor-pointer"
+                            >
+                              Dismiss
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleResolveReport(report.id, 'resolved')}
+                              disabled={actionLoadingId === `report-${report.id}`}
+                              className="px-3 py-1 bg-emerald-700 text-white rounded-lg text-xs font-semibold hover:bg-emerald-800 cursor-pointer shadow-xs"
+                            >
+                              Resolve
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
-
-                  <div className="p-2.5 bg-stone-50 rounded-xl text-xs text-zinc-700 italic border border-stone-200/60">
-                    "{report.target_snippet}"
-                  </div>
-
-                  {report.details && (
-                    <p className="text-[11px] text-zinc-600">
-                      <strong>Reporter Note:</strong> {report.details}
-                    </p>
-                  )}
-
-                  <div className="pt-2 border-t border-stone-100 flex items-center justify-between">
-                    <span className="text-[10px] text-zinc-400">
-                      Reported {new Date(report.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-
-                    <div className="flex items-center gap-1.5">
-                      {report.status === 'pending' && (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => handleResolveReport(report.id, 'dismissed')}
-                            disabled={actionLoadingId === `report-${report.id}`}
-                            className="px-2.5 py-1 text-xs text-zinc-600 hover:bg-stone-100 rounded-lg cursor-pointer"
-                          >
-                            Dismiss
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleResolveReport(report.id, 'resolved')}
-                            disabled={actionLoadingId === `report-${report.id}`}
-                            className="px-3 py-1 bg-emerald-700 text-white rounded-lg text-xs font-semibold hover:bg-emerald-800 cursor-pointer shadow-xs"
-                          >
-                            Resolve
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -1156,6 +1370,391 @@ export function AdminDashboardModal({
                   </div>
                 );
               })}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 6: BANNED WORDS & AUTO-MODERATION RULES */}
+        {activeTab === 'banned_words' && (
+          <div className="flex-1 overflow-y-auto p-5 space-y-6">
+            {/* Auto-Hide Threshold Configuration Card */}
+            <div className="bg-stone-50 border border-stone-200 rounded-2xl p-4 sm:p-5 space-y-3.5 shadow-2xs">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-rose-100 text-rose-800 flex items-center justify-center">
+                    <ShieldAlert className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="font-display text-sm font-bold text-zinc-950">
+                      Auto-Hide Report Threshold
+                    </h3>
+                    <p className="text-[11px] text-zinc-500">
+                      Number of community reports required to automatically hide content pending review
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  {[2, 3, 4, 5].map((threshold) => (
+                    <button
+                      key={threshold}
+                      type="button"
+                      onClick={() => handleChangeThreshold(threshold)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        thresholdState === threshold
+                          ? 'bg-rose-700 text-white shadow-xs scale-105'
+                          : 'bg-white border border-stone-300 text-zinc-700 hover:bg-stone-100'
+                      }`}
+                    >
+                      {threshold} Reports {threshold === 3 ? '(Default)' : ''}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="p-3 bg-white border border-stone-200/80 rounded-xl text-xs text-zinc-600 leading-relaxed">
+                When a campus post or comment reaches <strong>{thresholdState} pending reports</strong>, it is immediately removed from the active feed view. It remains stored for administrator review where you can 1-tap restore or confirm deletion.
+              </div>
+            </div>
+
+            {/* Banned Words Editor */}
+            <div className="bg-white border border-stone-200 rounded-2xl p-4 sm:p-5 space-y-4 shadow-2xs">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div>
+                  <h3 className="font-display text-sm font-bold text-zinc-950 flex items-center gap-2">
+                    <span>Restricted Keywords & Scam Phrases</span>
+                    <span className="text-[10px] font-mono font-bold bg-stone-100 text-zinc-700 px-2 py-0.5 rounded-full">
+                      {bannedWordsList.length} Active
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-zinc-500">
+                    Content containing these words is automatically blocked upon submission with friendly guidance.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleResetWords}
+                  className="px-3 py-1.5 rounded-xl border border-stone-300 text-zinc-600 hover:text-zinc-900 hover:bg-stone-100 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Reset to Defaults</span>
+                </button>
+              </div>
+
+              {bannedWordSuccess && (
+                <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs font-semibold text-emerald-900 flex items-center gap-2">
+                  <Check className="w-4 h-4 text-emerald-700" />
+                  <span>{bannedWordSuccess}</span>
+                </div>
+              )}
+
+              {bannedWordError && (
+                <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-xs font-semibold text-rose-900 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-700" />
+                  <span>{bannedWordError}</span>
+                </div>
+              )}
+
+              {/* Add Word Form */}
+              <form onSubmit={handleAddWord} className="flex gap-2">
+                <input
+                  type="text"
+                  value={newBannedWordInput}
+                  onChange={(e) => setNewBannedWordInput(e.target.value)}
+                  placeholder="Enter a new restricted word or phrase (e.g. fake clearance, leak answers)..."
+                  className="flex-1 text-xs px-3.5 py-2 bg-stone-50 border border-stone-300 rounded-xl focus:outline-none focus:ring-1 focus:ring-zinc-800 text-zinc-900"
+                />
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl bg-zinc-900 hover:bg-black text-white text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs shrink-0"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add Word</span>
+                </button>
+              </form>
+
+              {/* Banned Words Tag Cloud */}
+              <div className="space-y-2">
+                <label className="text-[11px] font-bold text-zinc-600 uppercase tracking-wider block">
+                  Active Filter List (Click × to remove):
+                </label>
+                <div className="flex flex-wrap gap-1.5 max-h-48 overflow-y-auto p-2 bg-stone-50 rounded-xl border border-stone-200/80">
+                  {bannedWordsList.map((word) => (
+                    <span
+                      key={word}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-white border border-stone-300 rounded-lg text-xs font-mono text-zinc-800 shadow-2xs group hover:border-rose-300"
+                    >
+                      <span>{word}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveWord(word)}
+                        className="w-4 h-4 rounded text-zinc-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center cursor-pointer transition-colors"
+                        title={`Remove "${word}"`}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Live Filter Tester Simulator */}
+            <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200 space-y-3">
+              <div className="flex items-center gap-2">
+                <Search className="w-4 h-4 text-zinc-600" />
+                <h4 className="font-bold text-xs text-zinc-900">
+                  Interactive Filter Tester
+                </h4>
+              </div>
+              <p className="text-[11px] text-zinc-500">
+                Type sample student text to preview whether the banned words filter will catch it.
+              </p>
+              <input
+                type="text"
+                value={testText}
+                onChange={(e) => setTestText(e.target.value)}
+                placeholder="Test a student submission here (e.g. Someone is offering an exam leak at Gate C)..."
+                className="w-full text-xs px-3.5 py-2 bg-white border border-stone-300 rounded-xl focus:outline-none focus:ring-1 focus:ring-zinc-800 text-zinc-900"
+              />
+
+              {testText.trim().length > 0 && (() => {
+                const match = containsBannedWords(testText, bannedWordsList);
+                return match.hasBannedWord ? (
+                  <div className="p-2.5 bg-rose-50 border border-rose-300 rounded-xl text-xs text-rose-900 flex items-center gap-2">
+                    <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0" />
+                    <span><strong>Blocked:</strong> Contains banned phrase <strong>"{match.matchedWord}"</strong>.</span>
+                  </div>
+                ) : (
+                  <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+                    <span><strong>Allowed:</strong> No banned keywords detected in this submission.</span>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        )}
+
+        {/* TAB: COMMUNITY REQUESTS & MULTI-CAMPUS GOVERNANCE */}
+        {activeTab === 'community_requests' && (
+          <div className="flex-1 overflow-y-auto p-5 space-y-5">
+            <div className="p-3.5 bg-emerald-50/80 border border-emerald-200 rounded-2xl text-xs text-emerald-950 flex items-start gap-2.5">
+              <Sparkles className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold">Campus Expansion & Community Approval</p>
+                <p className="text-[11px] text-emerald-900 leading-relaxed">
+                  Review student proposals for new university campus spaces. Approving a request immediately activates the community, publishes its <span className="font-mono">/c/:slug</span> shareable URL, and appoints the creator as the official community moderator with powers to customize campus rules and hide inappropriate posts.
+                </p>
+              </div>
+            </div>
+
+            {/* Pending Requests List */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="font-display text-xs font-bold uppercase tracking-wider text-zinc-600 flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>Pending Campus Proposals ({communityRequests.filter((r) => r.status === 'pending').length})</span>
+                </h3>
+              </div>
+
+              {communityRequests.length === 0 ? (
+                <div className="p-8 text-center text-xs text-zinc-500 bg-stone-50 rounded-2xl border border-dashed border-stone-200 space-y-1">
+                  <CheckCircle2 className="w-6 h-6 text-emerald-600 mx-auto" />
+                  <p className="font-semibold text-zinc-700">No pending campus proposals</p>
+                  <p className="text-[11px] text-zinc-400">All submitted university requests have been processed.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {communityRequests.map((req) => {
+                    const isPending = req.status === 'pending';
+                    const isApproved = req.status === 'approved';
+                    const isRejected = req.status === 'rejected';
+                    const isLoading = actionLoadingId === `comm-app-${req.id}` || actionLoadingId === `comm-rej-${req.id}`;
+                    const showRejectInput = rejectReasonTargetId === req.id;
+
+                    return (
+                      <div
+                        key={req.id}
+                        className={`p-4 rounded-2xl border transition-all space-y-3 ${
+                          isPending
+                            ? 'bg-white border-amber-300/80 shadow-xs ring-1 ring-amber-400/20'
+                            : isApproved
+                            ? 'bg-emerald-50/40 border-emerald-200'
+                            : 'bg-stone-50 border-stone-200 opacity-75'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3 flex-wrap">
+                          <div className="flex items-start gap-2.5">
+                            <span className="text-2xl p-2 rounded-xl bg-stone-100 border border-stone-200">
+                              {req.icon || '🎓'}
+                            </span>
+                            <div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h4 className="font-bold text-sm text-zinc-950">
+                                  {req.name}
+                                </h4>
+                                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-stone-100 text-stone-600 border border-stone-200">
+                                  /c/{req.slug}
+                                </span>
+                                <span
+                                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                                    isPending
+                                      ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                                      : isApproved
+                                      ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                                      : 'bg-stone-200 text-stone-700'
+                                  }`}
+                                >
+                                  {req.status}
+                                </span>
+                              </div>
+
+                              {req.tagline && (
+                                <p className="text-xs text-zinc-700 font-medium mt-0.5">
+                                  &quot;{req.tagline}&quot;
+                                </p>
+                              )}
+                              {req.description && (
+                                <p className="text-[11px] text-zinc-500 mt-1 leading-relaxed">
+                                  {req.description}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Theme swatch */}
+                          <div className="flex items-center gap-1.5 shrink-0 bg-stone-50 px-2 py-1 rounded-lg border border-stone-200 text-[11px] text-zinc-600">
+                            <span
+                              className="w-3.5 h-3.5 rounded-full border border-stone-300 inline-block shrink-0"
+                              style={{ backgroundColor: req.color || '#064e3b' }}
+                            />
+                            <span className="font-mono uppercase text-[10px]">{req.color || '#064e3b'}</span>
+                          </div>
+                        </div>
+
+                        {/* Rules snippet & Requester info */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs pt-1">
+                          <div className="p-2.5 bg-stone-50 rounded-xl border border-stone-200/70 text-[11px] space-y-1">
+                            <p className="font-semibold text-zinc-700">Requester / Proposed Moderator:</p>
+                            <p className="text-zinc-600">
+                              <strong>{req.requester_name}</strong>
+                              {req.requester_persona && (
+                                <span className="text-emerald-800 ml-1 font-mono">({req.requester_persona})</span>
+                              )}
+                            </p>
+                            <p className="text-stone-400 text-[10px]">
+                              Submitted {new Date(req.created_at).toLocaleDateString()}
+                            </p>
+                          </div>
+
+                          <div className="p-2.5 bg-stone-50 rounded-xl border border-stone-200/70 text-[11px] space-y-1">
+                            <p className="font-semibold text-zinc-700">Initial Rules ({req.rules?.length || 0}):</p>
+                            <p className="text-zinc-600 italic line-clamp-2">
+                              {req.rules && req.rules.length > 0
+                                ? req.rules[0]
+                                : 'Default platform safety guidelines'}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Rejection reason box if rejected */}
+                        {isRejected && req.rejection_reason && (
+                          <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800">
+                            <strong>Reason:</strong> {req.rejection_reason}
+                          </div>
+                        )}
+
+                        {/* Action buttons */}
+                        {isPending && (
+                          <div className="pt-2 border-t border-stone-100 flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-[11px] text-zinc-500">
+                              Approving will grant <strong>{req.requester_name}</strong> moderator powers.
+                            </span>
+
+                            <div className="flex items-center gap-2">
+                              {showRejectInput ? (
+                                <div className="flex items-center gap-1.5">
+                                  <input
+                                    type="text"
+                                    value={rejectReasonInput}
+                                    onChange={(e) => setRejectReasonInput(e.target.value)}
+                                    placeholder="Reason for declining..."
+                                    className="text-xs px-2.5 py-1.5 bg-white border border-stone-300 rounded-lg text-zinc-800"
+                                  />
+                                  <button
+                                    type="button"
+                                    disabled={isLoading}
+                                    onClick={() => handleRejectCommunity(req.id)}
+                                    className="px-2.5 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 cursor-pointer"
+                                  >
+                                    Confirm
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setRejectReasonTargetId(null)}
+                                    className="px-2 py-1.5 rounded-lg text-xs text-zinc-500 hover:bg-stone-100 cursor-pointer"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={isLoading}
+                                  onClick={() => setRejectReasonTargetId(req.id)}
+                                  className="px-3 py-1.5 rounded-xl border border-stone-300 bg-white hover:bg-rose-50 hover:text-rose-700 text-zinc-700 text-xs font-semibold transition-colors cursor-pointer"
+                                >
+                                  Reject
+                                </button>
+                              )}
+
+                              <button
+                                type="button"
+                                disabled={isLoading}
+                                onClick={() => handleApproveCommunity(req.id)}
+                                className="px-4 py-1.5 rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-semibold inline-flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                <span>Approve & Launch Campus</span>
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Currently Live Communities Summary */}
+            <div className="pt-4 border-t border-stone-200 space-y-3">
+              <h3 className="font-display text-xs font-bold uppercase tracking-wider text-zinc-600">
+                Live Campus Communities ({approvedCommunities.length})
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {approvedCommunities.map((comm) => (
+                  <div
+                    key={comm.id}
+                    className="p-3 rounded-xl bg-stone-50 border border-stone-200 flex items-center justify-between"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-xl">{comm.icon || '🎓'}</span>
+                      <div>
+                        <p className="text-xs font-bold text-zinc-900">{comm.name}</p>
+                        <p className="text-[10px] text-zinc-500 font-mono">/c/{comm.slug}</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-white text-zinc-700 border border-stone-200">
+                        {(comm.member_count || 1).toLocaleString()} members
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         )}

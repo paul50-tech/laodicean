@@ -134,38 +134,44 @@ export function extractCardContent(post: FeedPost): {
   authorLabel: string;
   stampText: string;
 } {
-  let badgeLabel = 'CAMPUS STORY';
+  const commName = (post.community_name || 'Juja').toUpperCase();
+  let badgeLabel = `${commName} STORY`;
   let badgeEmoji = '📝';
-  let stampText = 'JUJA UNFILTERED';
+  let stampText = `${commName} UNFILTERED`;
 
   switch (post.post_type) {
     case 'poll':
-      badgeLabel = 'JUJA CAMPUS POLL';
+      badgeLabel = `${commName} CAMPUS POLL`;
       badgeEmoji = '📊';
       stampText = 'HAVE YOUR SAY';
       break;
     case 'mushene':
-      badgeLabel = 'JUJA STREET MUSHENE';
+      badgeLabel = `${commName} STREET MUSHENE`;
       badgeEmoji = '🗣️';
       stampText = '100% RAW JUICE';
       break;
     case 'confession':
-      badgeLabel = 'ANONYMOUS CONFESSION';
+      badgeLabel = `${commName} CONFESSION`;
       badgeEmoji = '🤫';
       stampText = 'PERSONA VERIFIED';
       break;
     case 'event':
-      badgeLabel = 'JUJA CAMPUS EVENT';
+      badgeLabel = `${commName} CAMPUS EVENT`;
       badgeEmoji = '📅';
       stampText = 'GOING LIVE';
       break;
     case 'meme':
-      badgeLabel = 'CAMPUS MEME';
+      badgeLabel = `${commName} MEME`;
       badgeEmoji = '😂';
       stampText = 'PURE COMEDY';
       break;
+    case 'ask_juja':
+      badgeLabel = `ASK ${commName}`;
+      badgeEmoji = '❓';
+      stampText = 'CAMPUS Q&A';
+      break;
     case 'photo':
-      badgeLabel = 'CAMPUS MOMENT';
+      badgeLabel = `${commName} MOMENT`;
       badgeEmoji = '📸';
       stampText = 'CAMPUS SIGHTS';
       break;

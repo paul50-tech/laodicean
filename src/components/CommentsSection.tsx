@@ -6,6 +6,7 @@ import {
   countAllComments,
   buildCommentTree,
 } from '../lib/comments';
+import { checkRateLimit, recordActionTimestamp } from '../lib/rateLimit';
 import { CommentItem } from './CommentItem';
 import {
   MessageCircle,
@@ -78,6 +79,13 @@ export function CommentsSection({
       return;
     }
 
+    // Rate limit check against spam
+    const rateCheck = checkRateLimit('comment', currentUserProfile.id);
+    if (!rateCheck.allowed) {
+      setError(rateCheck.message);
+      return;
+    }
+
     setSubmitting(true);
     setError(null);
 
@@ -95,6 +103,9 @@ export function CommentsSection({
         setError(res.error || 'Failed to post comment.');
         return;
       }
+
+      // Record rate limit timestamp upon success
+      recordActionTimestamp('comment', currentUserProfile.id);
 
       setComments((prev) => {
         const updated = [...prev, res.comment!];

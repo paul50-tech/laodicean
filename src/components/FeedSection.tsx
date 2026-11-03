@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { CommentWithAuthor, FeedPost, FeedFilter, Profile } from '../types';
+import { CommentWithAuthor, FeedPost, FeedFilter, Profile, Community } from '../types';
 import { fetchInfiniteFeed, fetchPostById, SEED_JUJA_POSTS } from '../lib/posts';
 import { getPinnedPollId, setPinnedPollId } from '../lib/polls';
 import { FeedFilterChips } from './FeedFilterChips';
@@ -20,11 +20,13 @@ interface FeedSectionProps {
   onOpenComposer: () => void;
   newlyCreatedPost?: FeedPost | null;
   currentUserProfile?: Profile | null;
+  activeCommunity?: Community | null;
   onRequireAuth: (message: string) => void;
   onSelectPost?: (post: FeedPost) => void;
   onReportPost?: (post: FeedPost) => void;
   onReportComment?: (comment: CommentWithAuthor) => void;
   onToggleHidePost?: (postId: string, currentStatus?: 'live' | 'hidden') => void;
+  onSelectCommunity?: (slug: string) => void;
 }
 
 const PAGE_SIZE = 5;
@@ -33,11 +35,13 @@ export function FeedSection({
   onOpenComposer,
   newlyCreatedPost,
   currentUserProfile,
+  activeCommunity,
   onRequireAuth,
   onSelectPost,
   onReportPost,
   onReportComment,
   onToggleHidePost,
+  onSelectCommunity,
 }: FeedSectionProps) {
   const [filter, setFilter] = useState<FeedFilter>('all');
   const [posts, setPosts] = useState<FeedPost[]>([]);
@@ -152,6 +156,8 @@ export function FeedSection({
     }
   };
 
+  const commSlug = activeCommunity?.slug || 'juja';
+
   // Load initial page of posts or on filter change
   const loadInitialFeed = useCallback(
     async (selectedFilter: FeedFilter) => {
@@ -161,6 +167,7 @@ export function FeedSection({
           page: 0,
           pageSize: PAGE_SIZE,
           filter: selectedFilter,
+          communitySlug: commSlug,
         });
 
         // If user just created a post matching the current filter, prepend it
@@ -180,7 +187,7 @@ export function FeedSection({
         setLoading(false);
       }
     },
-    [newlyCreatedPost]
+    [newlyCreatedPost, commSlug]
   );
 
   // Load next batch for infinite scroll
@@ -195,6 +202,7 @@ export function FeedSection({
         page: nextPage,
         pageSize: PAGE_SIZE,
         filter,
+        communitySlug: commSlug,
       });
 
       setPosts((prev) => {
@@ -208,12 +216,12 @@ export function FeedSection({
     } finally {
       setLoadingMore(false);
     }
-  }, [loading, loadingMore, hasMore, page, filter]);
+  }, [loading, loadingMore, hasMore, page, filter, commSlug]);
 
-  // Trigger load on filter change
+  // Trigger load on filter change or community switch
   useEffect(() => {
     loadInitialFeed(filter);
-  }, [filter, loadInitialFeed]);
+  }, [filter, commSlug, loadInitialFeed]);
 
   // Pull-to-refresh / manual refresh
   const handleRefresh = async () => {
@@ -348,10 +356,10 @@ export function FeedSection({
           </div>
           <div className="space-y-1">
             <h3 className="font-display text-sm font-bold text-zinc-900">
-              No {filter !== 'all' ? `${filter} ` : ''}posts in Juja yet
+              No {filter !== 'all' ? `${filter} ` : ''}posts in {activeCommunity?.name || 'Juja'} yet
             </h3>
             <p className="text-xs text-zinc-500 max-w-xs mx-auto">
-              Be the first to share a post or poll in this category, or switch back to All to see everything happening around JKUAT.
+              Be the first comrade to share a post or poll in {activeCommunity?.name || 'Juja'}, or switch back to All to see everything.
             </p>
           </div>
           <div className="flex items-center justify-center gap-2 pt-1">
@@ -420,7 +428,7 @@ export function FeedSection({
           {loadingMore && (
             <div className="py-4 text-center text-xs text-stone-500 flex items-center justify-center gap-2">
               <Loader2 className="w-4 h-4 text-emerald-800 animate-spin" />
-              <span>Loading more Juja posts...</span>
+              <span>Loading more {activeCommunity?.name || 'Juja'} posts...</span>
             </div>
           )}
 
@@ -432,7 +440,7 @@ export function FeedSection({
                 onClick={loadNextPage}
                 className="cursor-pointer px-4 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-semibold transition-colors"
               >
-                Load more Juja posts
+                Load more {activeCommunity?.name || 'Juja'} posts
               </button>
             </div>
           )}
@@ -442,7 +450,7 @@ export function FeedSection({
             <div className="py-6 text-center space-y-1 border-t border-stone-200/80">
               <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 px-3 py-1 rounded-full">
                 <CheckCircle className="w-3.5 h-3.5" />
-                <span>You're all caught up with Juja campus</span>
+                <span>You're all caught up with {activeCommunity?.name || 'Juja'} campus</span>
               </div>
               <p className="text-[11px] text-zinc-400">
                 New stories, polls, and mushene appear as students post.

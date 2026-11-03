@@ -7,6 +7,7 @@ import { supabase } from './supabase';
 import { Post, PostType, FeedPost, FeedFilter, ReactionCounts, EventData, UserRole, PostStatus } from '../types';
 import { rankCampusFeed } from './feedRanking';
 import { addPostToPendingQueue } from './guestBloggers';
+import { saveOfflineFeedCache, getOfflineFeedCache } from './pwaHelpers';
 
 export const DEFAULT_COMMUNITY_SLUG = 'juja';
 
@@ -872,6 +873,7 @@ export async function fetchInfiniteFeed(
         }));
 
         const totalCount = count ?? 0;
+        saveOfflineFeedCache(posts);
         return {
           posts,
           hasMore: totalCount > to + 1 || data.length === pageSize,
@@ -941,6 +943,7 @@ export async function fetchInfiniteFeed(
         });
 
         const totalCount = postsCount ?? 0;
+        saveOfflineFeedCache(posts);
         return {
           posts,
           hasMore: totalCount > to + 1 || postsData.length === pageSize,
@@ -948,16 +951,23 @@ export async function fetchInfiniteFeed(
         };
       }
     } catch {
-      // Fall through to seed data if error or empty
+      // Fall through to offline cache or seed data if error or empty
     }
   }
 
-  // Fallback to seed posts with intelligent ranking (newest + high engagement boost + fresh voices)
-  const filteredSeed = filterFeedPosts(SEED_JUJA_POSTS, filter);
+  // Fallback to offline cached posts or seed posts with intelligent ranking
+  const cachedPool = getOfflineFeedCache();
+  const sourcePool = cachedPool && cachedPool.length > 0 ? cachedPool : SEED_JUJA_POSTS;
+  const filteredSeed = filterFeedPosts(sourcePool, filter);
   const rankedSeed = rankCampusFeed(filteredSeed);
   const start = page * pageSize;
   const end = start + pageSize;
   const slice = rankedSeed.slice(start, end);
+
+  // Prime offline cache on initial visit
+  if (!cachedPool || cachedPool.length === 0) {
+    saveOfflineFeedCache(rankedSeed);
+  }
 
   return {
     posts: slice,

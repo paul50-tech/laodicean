@@ -1,6 +1,7 @@
 import React from 'react';
 import { User, Sparkles, ShieldAlert } from 'lucide-react';
 import { Profile } from '../types';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface TopBarProps {
   profile: Profile | null;
@@ -48,8 +49,11 @@ export const TopBar: React.FC<TopBarProps> = ({
           </span>
         </div>
 
-        {/* User Session & Admin Action */}
+        {/* User Session, PWA Install & Admin Action */}
         <div className="flex items-center gap-2">
+          {/* PWA Install Button */}
+          <PWAInstallButton variant="header" />
+
           {isAdmin && onOpenAdmin && (
             <button
               type="button"

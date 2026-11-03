@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Offline • Laodicean Juja</title>
+    <meta name="theme-color" content="#064e3b" />
+    <style>
+      :root {
+        --emerald-900: #064e3b;
+        --emerald-800: #065f46;
+        --emerald-700: #047857;
+        --emerald-100: #d1fae5;
+        --emerald-50: #ecfdf5;
+        --amber-500: #f59e0b;
+        --bg-color: #faf9f6;
+        --text-main: #18181b;
+        --text-muted: #71717a;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        background-color: var(--bg-color);
+        color: var(--text-main);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        padding: 24px;
+        text-align: center;
+      }
+      .card {
+        background: #ffffff;
+        border: 1px solid #e4e4e7;
+        border-radius: 24px;
+        padding: 36px 28px;
+        max-width: 440px;
+        width: 100%;
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);
+      }
+      .icon-container {
+        width: 72px;
+        height: 72px;
+        margin: 0 auto 20px;
+        background: var(--emerald-50);
+        border: 1px solid var(--emerald-100);
+        border-radius: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--emerald-800);
+      }
+      h1 {
+        font-size: 20px;
+        font-weight: 700;
+        color: var(--emerald-900);
+        margin-bottom: 8px;
+        letter-spacing: -0.02em;
+      }
+      .badge {
+        display: inline-block;
+        font-size: 11px;
+        font-weight: 600;
+        background: #fef3c7;
+        color: #92400e;
+        border: 1px solid #fde68a;
+        padding: 3px 10px;
+        border-radius: 100px;
+        margin-bottom: 16px;
+      }
+      p {
+        font-size: 13px;
+        line-height: 1.55;
+        color: var(--text-muted);
+        margin-bottom: 24px;
+      }
+      .tips {
+        background: #f8fafc;
+        border: 1px dashed #cbd5e1;
+        border-radius: 16px;
+        padding: 14px 16px;
+        text-align: left;
+        margin-bottom: 24px;
+      }
+      .tips-title {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        color: #475569;
+        margin-bottom: 6px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .tips ul {
+        list-style: disc;
+        padding-left: 18px;
+        font-size: 12px;
+        color: #64748b;
+        line-height: 1.5;
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        width: 100%;
+        padding: 14px 20px;
+        font-size: 14px;
+        font-weight: 600;
+        background: var(--emerald-900);
+        color: #ffffff;
+        border: none;
+        border-radius: 14px;
+        cursor: pointer;
+        transition: background 0.15s ease;
+        text-decoration: none;
+      }
+      .btn:hover {
+        background: var(--emerald-800);
+      }
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        background: var(--amber-500);
+        border-radius: 50%;
+        display: inline-block;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="icon-container">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="1" y1="1" x2="23" y2="23"></line>
+          <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"></path>
+          <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"></path>
+          <path d="M10.71 5.05A16 16 0 0 1 22.58 9"></path>
+          <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"></path>
+          <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>
+          <line x1="12" y1="20" x2="12.01" y2="20"></line>
+        </svg>
+      </div>
+
+      <span class="badge">
+        <span class="status-dot"></span> Campus Network Disconnected
+      </span>
+
+      <h1>You're Currently Offline</h1>
+      
+      <p>
+        Laodicean couldn't reach the Juja campus feed. Check your mobile bundles, Eduroam, or Gate Wi-Fi connection.
+      </p>
+
+      <div class="tips">
+        <div class="tips-title">💡 Juja Connectivity Tips:</div>
+        <ul>
+          <li>Any posts you loaded earlier are safely stored in your local cache.</li>
+          <li>New posts and reactions will sync as soon as network returns.</li>
+          <li>Try toggling Airplane mode or switching to campus Eduroam.</li>
+        </ul>
+      </div>
+
+      <button class="btn" onclick="window.location.reload()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
+        </svg>
+        Retry Connection
+      </button>
+    </div>
+
+    <script>
+      // Auto-reload when network reconnects
+      window.addEventListener('online', () => {
+        window.location.reload();
+      });
+    </script>
+  </body>
+</html>

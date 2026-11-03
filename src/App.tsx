@@ -1,22 +1,35 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, Suspense, lazy } from 'react';
 import { TopBar } from './components/TopBar';
 import { SupabaseCard } from './components/SupabaseCard';
 import { AuthModal } from './components/AuthModal';
-import { OnboardingModal } from './components/OnboardingModal';
 import { ProfileCard } from './components/ProfileCard';
 import { FloatingCreateButton } from './components/FloatingCreateButton';
 import { PostComposerModal } from './components/PostComposerModal';
 import { FeedSection } from './components/FeedSection';
 import { PostDetailPage } from './components/PostDetailPage';
-import { ReportModal, ReportTargetInfo } from './components/ReportModal';
-import { AdminDashboardModal } from './components/AdminDashboardModal';
+import { ReportTargetInfo } from './components/ReportModal';
 import { fetchProfile, signOut } from './lib/auth';
 import { supabase } from './lib/supabase';
 import { togglePostStatus } from './lib/moderation';
 import { SEED_JUJA_POSTS } from './lib/posts';
-import { MemeEditorModal } from './components/MemeEditorModal';
 import { Profile, Post, FeedPost, CommentWithAuthor } from './types';
 import { UserPlus, Sparkles, ShieldCheck, Key, Plus } from 'lucide-react';
+import { PWAInstallButton } from './components/PWAInstallButton';
+import { OfflineIndicator } from './components/OfflineIndicator';
+
+// Code-split heavy modals to ensure lean initial bundle on weak connections
+const MemeEditorModal = lazy(() =>
+  import('./components/MemeEditorModal').then((m) => ({ default: m.MemeEditorModal }))
+);
+const AdminDashboardModal = lazy(() =>
+  import('./components/AdminDashboardModal').then((m) => ({ default: m.AdminDashboardModal }))
+);
+const ReportModal = lazy(() =>
+  import('./components/ReportModal').then((m) => ({ default: m.ReportModal }))
+);
+const OnboardingModal = lazy(() =>
+  import('./components/OnboardingModal').then((m) => ({ default: m.OnboardingModal }))
+);
 
 /**
  * Extracts post ID from current browser location pathname (/p/:id),
@@ -292,6 +305,9 @@ export default function App() {
               </p>
             </section>
 
+            {/* PWA Home Screen Install Banner */}
+            <PWAInstallButton variant="banner" />
+
             {/* Quick Post Prompt Bar */}
             <div className="bg-white border border-stone-200/90 rounded-2xl p-3.5 shadow-xs flex items-center justify-between gap-3">
               <div className="flex items-center gap-2.5 min-w-0">
@@ -476,22 +492,58 @@ export default function App() {
         }}
       />
 
-      {/* Campus Meme Studio Modal */}
-      <MemeEditorModal
-        isOpen={memeStudioOpen}
-        onClose={() => setMemeStudioOpen(false)}
-        onPostMeme={(file, previewUrl, caption) => {
-          setMemeStudioOpen(false);
-          setComposerInitialMeme({ file, previewUrl, caption });
-          if (profile) {
-            setComposerOpen(true);
-          } else {
-            handleRequireAuth('Sign in with your campus account to post your meme to the Juja feed!');
-          }
-        }}
-      />
+      {/* Lazy Suspense Boundaries for Heavy Modals */}
+      <Suspense fallback={null}>
+        {memeStudioOpen && (
+          <MemeEditorModal
+            isOpen={memeStudioOpen}
+            onClose={() => setMemeStudioOpen(false)}
+            onPostMeme={(file, previewUrl, caption) => {
+              setMemeStudioOpen(false);
+              setComposerInitialMeme({ file, previewUrl, caption });
+              if (profile) {
+                setComposerOpen(true);
+              } else {
+                handleRequireAuth('Sign in with your campus account to post your meme to the Juja feed!');
+              }
+            }}
+          />
+        )}
 
-      {/* Auth Modal */}
+        {profile && onboardingOpen && (
+          <OnboardingModal
+            profile={profile}
+            isOpen={onboardingOpen}
+            onClose={() => setOnboardingOpen(false)}
+            onProfileUpdated={(updated) => setProfile(updated)}
+          />
+        )}
+
+        {reportModalOpen && (
+          <ReportModal
+            isOpen={reportModalOpen}
+            target={reportTarget}
+            reporterId={profile?.id || 'guest_user'}
+            onClose={() => {
+              setReportModalOpen(false);
+              setReportTarget(null);
+            }}
+          />
+        )}
+
+        {adminDashboardOpen && (
+          <AdminDashboardModal
+            isOpen={adminDashboardOpen}
+            currentUserProfile={profile}
+            posts={lastCreatedPost ? [lastCreatedPost, ...SEED_JUJA_POSTS] : SEED_JUJA_POSTS}
+            onClose={() => setAdminDashboardOpen(false)}
+            onPostStatusChange={handleToggleHidePost}
+            onNavigateToPost={handleNavigateToPost}
+          />
+        )}
+      </Suspense>
+
+      {/* Auth Modal (lightweight, immediate) */}
       <AuthModal
         isOpen={authModalOpen}
         promptMessage={authPromptMessage}
@@ -502,36 +554,8 @@ export default function App() {
         onAuthSuccess={handleAuthSuccess}
       />
 
-      {/* Onboarding & Edit Persona Modal */}
-      {profile && (
-        <OnboardingModal
-          profile={profile}
-          isOpen={onboardingOpen}
-          onClose={() => setOnboardingOpen(false)}
-          onProfileUpdated={(updated) => setProfile(updated)}
-        />
-      )}
-
-      {/* Report Modal */}
-      <ReportModal
-        isOpen={reportModalOpen}
-        target={reportTarget}
-        reporterId={profile?.id || 'guest_user'}
-        onClose={() => {
-          setReportModalOpen(false);
-          setReportTarget(null);
-        }}
-      />
-
-      {/* Admin Dashboard Modal */}
-      <AdminDashboardModal
-        isOpen={adminDashboardOpen}
-        currentUserProfile={profile}
-        posts={lastCreatedPost ? [lastCreatedPost, ...SEED_JUJA_POSTS] : SEED_JUJA_POSTS}
-        onClose={() => setAdminDashboardOpen(false)}
-        onPostStatusChange={handleToggleHidePost}
-        onNavigateToPost={handleNavigateToPost}
-      />
+      {/* Global Connectivity & Offline Status Bar */}
+      <OfflineIndicator />
     </div>
   );
 }

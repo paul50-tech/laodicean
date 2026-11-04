@@ -107,12 +107,9 @@ export function CommentsSection({
       // Record rate limit timestamp upon success
       recordActionTimestamp('comment', currentUserProfile.id);
 
-      setComments((prev) => {
-        const updated = [...prev, res.comment!];
-        const newTotal = countAllComments(updated);
-        onCommentCountChange?.(newTotal);
-        return updated;
-      });
+      const updated = [...comments, res.comment!];
+      setComments(updated);
+      onCommentCountChange?.(countAllComments(updated));
 
       setNewCommentBody('');
     } catch {
@@ -124,25 +121,22 @@ export function CommentsSection({
 
   // Handler when an inline reply is added anywhere in the tree
   const handleReplyAdded = (newReply: CommentWithAuthor) => {
-    setComments((prev) => {
-      // Flatten existing tree plus new reply, then re-build tree
-      const flatten = (items: CommentWithAuthor[]): CommentWithAuthor[] => {
-        const acc: CommentWithAuthor[] = [];
-        for (const item of items) {
-          acc.push(item);
-          if (item.replies && item.replies.length > 0) {
-            acc.push(...flatten(item.replies));
-          }
+    // Flatten existing tree plus new reply, then re-build tree
+    const flatten = (items: CommentWithAuthor[]): CommentWithAuthor[] => {
+      const acc: CommentWithAuthor[] = [];
+      for (const item of items) {
+        acc.push(item);
+        if (item.replies && item.replies.length > 0) {
+          acc.push(...flatten(item.replies));
         }
-        return acc;
-      };
+      }
+      return acc;
+    };
 
-      const flat = [...flatten(prev), newReply];
-      const remapped = buildCommentTree(flat);
-      const newTotal = countAllComments(remapped);
-      onCommentCountChange?.(newTotal);
-      return remapped;
-    });
+    const flat = [...flatten(comments), newReply];
+    const remapped = buildCommentTree(flat);
+    setComments(remapped);
+    onCommentCountChange?.(countAllComments(remapped));
   };
 
   const totalCount = countAllComments(comments);

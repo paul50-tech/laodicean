@@ -606,7 +606,7 @@ export function PostDetailPage({
           postId={post.id}
           currentUserProfile={currentUserProfile}
           onRequireAuth={onRequireAuth}
-          onCommentCountChange={(newCount) => setCommentsCount(newCount)}
+          onCommentCountChange={setCommentsCount}
           onReportComment={onReportComment}
         />
       </section>

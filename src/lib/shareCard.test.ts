@@ -109,6 +109,15 @@ test('extractCardContent sets appropriate badge and stamp for different post typ
   assert.equal(musheneContent.badgeLabel, 'JUJA STREET MUSHENE');
   assert.equal(musheneContent.badgeEmoji, '🗣️');
   assert.equal(musheneContent.stampText, '100% RAW JUICE');
+
+  const rongaiPost: FeedPost = {
+    ...pollPost,
+    community_name: 'Rongai',
+    community_slug: 'rongai',
+  };
+  const rongaiContent = extractCardContent(rongaiPost);
+  assert.equal(rongaiContent.badgeLabel, 'RONGAI CAMPUS POLL');
+  assert.equal(formatCardCommunityName(rongaiPost), 'RONGAI · CAMPUS PULSE');
 });
 
 test('getCardTheme resolves valid themes and falls back to default', () => {

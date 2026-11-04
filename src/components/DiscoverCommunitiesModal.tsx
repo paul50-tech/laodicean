@@ -155,34 +155,39 @@ export function DiscoverCommunitiesModal({
                   }`}
                 >
                   {/* Card mini-banner */}
-                  <div
-                    className="h-14 w-full flex items-center justify-between px-3.5 text-white relative"
-                    style={{
-                      background: comm.banner_url
-                        ? `linear-gradient(to right, rgba(0,0,0,0.4), rgba(0,0,0,0.7)), url(${comm.banner_url}) center/cover`
-                        : `linear-gradient(90deg, ${comm.color || '#064e3b'} 0%, ${comm.accent_color || '#10b981'} 100%)`,
-                    }}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="text-2xl drop-shadow-xs">{comm.icon || '🎓'}</span>
-                      <div>
-                        <h3 className="font-display text-sm font-bold drop-shadow-xs flex items-center gap-1.5">
-                          <span>{comm.name}</span>
-                          {comm.is_default && (
-                            <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-white/20 text-white font-bold uppercase tracking-wider">
-                              Flagship
-                            </span>
-                          )}
-                        </h3>
-                        <p className="text-[10px] text-white/80 font-mono">/c/{comm.slug}</p>
-                      </div>
-                    </div>
+                  {(() => {
+                    const bannerImg = comm.banner_url || comm.banner;
+                    return (
+                      <div
+                        className="h-14 w-full flex items-center justify-between px-3.5 text-white relative"
+                        style={{
+                          background: bannerImg
+                            ? `linear-gradient(to right, rgba(0,0,0,0.4), rgba(0,0,0,0.7)), url(${bannerImg}) center/cover`
+                            : `linear-gradient(90deg, ${comm.color || '#064e3b'} 0%, ${comm.accent_color || '#10b981'} 100%)`,
+                        }}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-2xl drop-shadow-xs">{comm.icon || '🎓'}</span>
+                          <div>
+                            <h3 className="font-display text-sm font-bold drop-shadow-xs flex items-center gap-1.5">
+                              <span>{comm.name}</span>
+                              {comm.is_default && (
+                                <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-white/20 text-white font-bold uppercase tracking-wider">
+                                  Flagship
+                                </span>
+                              )}
+                            </h3>
+                            <p className="text-[10px] text-white/80 font-mono">/c/{comm.slug}</p>
+                          </div>
+                        </div>
 
-                    <div className="flex items-center gap-1 text-[11px] bg-black/30 backdrop-blur-xs px-2 py-0.5 rounded-full border border-white/20">
-                      <Users className="w-3 h-3" />
-                      <span>{(comm.member_count || 1).toLocaleString()}</span>
-                    </div>
-                  </div>
+                        <div className="flex items-center gap-1 text-[11px] bg-black/30 backdrop-blur-xs px-2 py-0.5 rounded-full border border-white/20">
+                          <Users className="w-3 h-3" />
+                          <span>{(comm.member_count || 1).toLocaleString()}</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* Card Body */}
                   <div className="p-3.5 space-y-2.5">

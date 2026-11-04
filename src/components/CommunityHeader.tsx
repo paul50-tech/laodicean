@@ -23,12 +23,12 @@ export function CommunityHeader({
   const [copied, setCopied] = useState(false);
   const isMod = isUserCommunityModerator(
     community,
-    currentUserProfile?.id,
+    currentUserProfile,
     currentUserProfile?.role
   );
 
   const handleCopyLink = async () => {
-    const url = formatCommunityShareUrl(community.slug);
+    const url = formatCommunityShareUrl(community);
     try {
       await navigator.clipboard.writeText(url);
       setCopied(true);
@@ -41,7 +41,7 @@ export function CommunityHeader({
   };
 
   const handleShareWhatsApp = () => {
-    const url = formatCommunityShareUrl(community.slug);
+    const url = formatCommunityShareUrl(community);
     const text = encodeURIComponent(
       `Join the conversation in ${community.name} on Laodicean! 🎓\n${community.tagline || ''}\n${url}`
     );
@@ -50,6 +50,7 @@ export function CommunityHeader({
 
   const primaryBg = community.color || '#064e3b';
   const accentColor = community.accent_color || '#10b981';
+  const bannerImage = community.banner_url || community.banner;
 
   return (
     <section className="relative overflow-hidden rounded-2xl bg-white border border-stone-200/90 shadow-xs">
@@ -57,8 +58,8 @@ export function CommunityHeader({
       <div
         className="relative h-24 sm:h-28 w-full transition-colors duration-300"
         style={{
-          background: community.banner_url
-            ? `linear-gradient(to bottom, rgba(0,0,0,0.2), rgba(0,0,0,0.65)), url(${community.banner_url}) center/cover no-repeat`
+          background: bannerImage
+            ? `linear-gradient(to bottom, rgba(0,0,0,0.2), rgba(0,0,0,0.65)), url(${bannerImage}) center/cover no-repeat`
             : `linear-gradient(135deg, ${primaryBg} 0%, ${accentColor} 100%)`,
         }}
       >

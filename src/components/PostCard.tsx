@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { CommentWithAuthor, FeedPost, PostType, Profile } from '../types';
 import { truncateTeaser } from '../lib/posts';
 import { ReactionsBar } from './ReactionsBar';
@@ -28,6 +28,9 @@ import {
   Bell,
   BellRing,
   HelpCircle,
+  MoreHorizontal,
+  Link as LinkIcon,
+  Pin,
 } from 'lucide-react';
 import { ShareCardModal } from './ShareCardModal';
 import { ProfileBadgeTag } from './ProfileBadgeTag';
@@ -61,6 +64,13 @@ export function PostCard({
   const [commentsCount, setCommentsCount] = useState(post.comments_count ?? 0);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [shareCardModalOpen, setShareCardModalOpen] = useState(false);
+  const [shareMenuOpen, setShareMenuOpen] = useState(false);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+
+  const moreMenuRef = useRef<HTMLDivElement | null>(null);
+  const shareMenuRef = useRef<HTMLDivElement | null>(null);
+
   const [hasRsvped, setHasRsvped] = useState<boolean>(() => {
     if (post.event_data?.user_has_rsvped) return true;
     try {
@@ -73,12 +83,41 @@ export function PostCard({
   const [isFollowed, setIsFollowed] = useState<boolean>(() => isPostFollowed(post.id));
   const [followToast, setFollowToast] = useState<string | null>(null);
 
+  // Close menus on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
+        setMoreMenuOpen(false);
+      }
+      if (shareMenuRef.current && !shareMenuRef.current.contains(e.target as Node)) {
+        setShareMenuOpen(false);
+      }
+    };
+    if (moreMenuOpen || shareMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [moreMenuOpen, shareMenuOpen]);
+
   const handleToggleFollow = (e: React.MouseEvent) => {
     e.stopPropagation();
     const res = toggleFollowPost(post.id);
     setIsFollowed(res.isFollowed);
     setFollowToast(res.isFollowed ? '🔔 Notifications turned on for this post' : '🔕 Notifications muted');
     setTimeout(() => setFollowToast(null), 2500);
+  };
+
+  const handleCopyLink = async () => {
+    try {
+      const url = `${window.location.origin}/p/${encodeURIComponent(post.id)}`;
+      await navigator.clipboard.writeText(url);
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2000);
+    } catch {
+      // fallback
+    }
+    setMoreMenuOpen(false);
+    setShareMenuOpen(false);
   };
 
   const handleToggleRsvp = (e: React.MouseEvent) => {
@@ -187,6 +226,10 @@ export function PostCard({
     }
   };
 
+  const isModeratorOrAdmin =
+    currentUserProfile?.role === 'admin' ||
+    currentUserProfile?.role === 'moderator';
+
   return (
     <article
       className={`bg-white rounded-2xl p-4 sm:p-5 shadow-xs space-y-3.5 transition-all ${
@@ -213,7 +256,7 @@ export function PostCard({
         <div className="bg-gradient-to-r from-amber-500/10 via-amber-400/20 to-amber-500/10 border-b border-amber-200/80 -mx-4 -mt-4 mb-3 sm:-mx-5 sm:-mt-5 sm:mb-3.5 px-4 py-2 sm:px-5 flex items-center justify-between text-amber-950 font-semibold text-xs rounded-t-2xl">
           <div className="flex items-center gap-1.5">
             <span className="text-sm">📌</span>
-            <span className="tracking-tight">Juja Poll of the Week</span>
+            <span className="tracking-tight">Pinned Campus Spotlight</span>
           </div>
           <span className="text-[10px] font-mono text-amber-900 bg-amber-100/90 px-1.5 py-0.5 rounded border border-amber-300/80 uppercase tracking-wider font-bold">
             Pinned
@@ -221,7 +264,7 @@ export function PostCard({
         </div>
       )}
 
-      {/* Header: Author Identity & Post Type */}
+      {/* Header: Author Identity & Overflow Menu (Jakob's Law) */}
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2.5 min-w-0">
           {/* Avatar */}
@@ -263,7 +306,7 @@ export function PostCard({
                 isMemeWinner={post.is_meme_of_week}
               />
 
-              {/* Admin unmask indicator - reveals real student name to admins */}
+              {/* Admin unmask indicator */}
               {post.is_persona && currentUserProfile?.role === 'admin' && (
                 <span
                   title={`Admin View: Verified student identity is ${post.author_real_name || 'Student Verified'}`}
@@ -284,28 +327,8 @@ export function PostCard({
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
-          {/* Admin 1-tap Hide / Restore button */}
-          {currentUserProfile?.role === 'admin' && onToggleHidePost && (
-            <button
-              type="button"
-              onClick={() => onToggleHidePost(post.id, post.status === 'hidden' ? 'hidden' : 'live')}
-              className={`cursor-pointer inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border transition-colors ${
-                post.status === 'hidden'
-                  ? 'bg-emerald-100 text-emerald-900 border-emerald-300 hover:bg-emerald-200'
-                  : 'bg-white border-stone-200 text-stone-600 hover:bg-rose-50 hover:text-rose-900 hover:border-rose-200'
-              }`}
-              title={post.status === 'hidden' ? 'Restore post to feed' : 'Hide post from feed'}
-            >
-              {post.status === 'hidden' ? (
-                <Eye className="w-3 h-3 text-emerald-700" />
-              ) : (
-                <EyeOff className="w-3 h-3 text-rose-700" />
-              )}
-              <span>{post.status === 'hidden' ? 'Restore' : 'Hide'}</span>
-            </button>
-          )}
-
+        {/* Right Header: Post Type Badge & Standard '···' Overflow Menu */}
+        <div className="flex items-center gap-1.5 shrink-0">
           {post.status === 'hidden' && (
             <span className="text-[10px] font-bold text-rose-800 bg-rose-100 px-1.5 py-0.5 rounded border border-rose-300">
               Hidden
@@ -313,20 +336,121 @@ export function PostCard({
           )}
 
           {getPostTypeBadge(post.post_type)}
-          {onSelectPost && (
+
+          {/* Standard '···' Overflow Menu (Familiar Twitter/Reddit/LinkedIn pattern) */}
+          <div className="relative" ref={moreMenuRef}>
             <button
               type="button"
-              onClick={() => onSelectPost(post)}
-              title="Open full post page"
-              className="w-7 h-7 rounded-lg text-zinc-400 hover:text-emerald-800 hover:bg-emerald-50 flex items-center justify-center transition-colors cursor-pointer"
+              onClick={() => setMoreMenuOpen(!moreMenuOpen)}
+              aria-expanded={moreMenuOpen}
+              className="w-8 h-8 rounded-full text-zinc-400 hover:text-zinc-800 hover:bg-stone-100 flex items-center justify-center transition-colors cursor-pointer"
+              title="More post options"
             >
-              <ExternalLink className="w-3.5 h-3.5" />
+              <MoreHorizontal className="w-4 h-4" />
             </button>
-          )}
+
+            {moreMenuOpen && (
+              <div
+                role="menu"
+                className="absolute right-0 mt-1 w-52 bg-white rounded-2xl shadow-lg border border-stone-200/90 py-1.5 z-40 animate-in fade-in zoom-in-95 duration-100"
+              >
+                {/* Dedicated post page */}
+                {onSelectPost && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMoreMenuOpen(false);
+                      onSelectPost(post);
+                    }}
+                    className="cursor-pointer w-full text-left px-3.5 py-2 text-xs flex items-center gap-2.5 hover:bg-stone-50 transition-colors text-stone-700"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5 text-stone-500" />
+                    <span>Open full post page</span>
+                  </button>
+                )}
+
+                {/* Copy link */}
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={handleCopyLink}
+                  className="cursor-pointer w-full text-left px-3.5 py-2 text-xs flex items-center gap-2.5 hover:bg-stone-50 transition-colors text-stone-700"
+                >
+                  <LinkIcon className="w-3.5 h-3.5 text-stone-500" />
+                  <span>{copiedLink ? 'Link copied! ✓' : 'Copy link to post'}</span>
+                </button>
+
+                {/* Report post */}
+                {onReportPost && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMoreMenuOpen(false);
+                      onReportPost(post);
+                    }}
+                    className="cursor-pointer w-full text-left px-3.5 py-2 text-xs flex items-center gap-2.5 hover:bg-rose-50 text-rose-700 transition-colors"
+                  >
+                    <Flag className="w-3.5 h-3.5 text-rose-600" />
+                    <span>Report post</span>
+                  </button>
+                )}
+
+                {/* Moderator / Admin Actions */}
+                {isModeratorOrAdmin && (
+                  <>
+                    <div className="my-1 border-t border-stone-100" />
+
+                    {/* Toggle Pin (admin only for polls or spotlights) */}
+                    {currentUserProfile?.role === 'admin' && onTogglePin && (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setMoreMenuOpen(false);
+                          onTogglePin(post.id);
+                        }}
+                        className="cursor-pointer w-full text-left px-3.5 py-2 text-xs flex items-center gap-2.5 hover:bg-amber-50 text-amber-900 transition-colors font-medium"
+                      >
+                        <Pin className="w-3.5 h-3.5 text-amber-700" />
+                        <span>{isPinned ? 'Unpin from top' : 'Pin to top of feed'}</span>
+                      </button>
+                    )}
+
+                    {/* Toggle Hide */}
+                    {onToggleHidePost && (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setMoreMenuOpen(false);
+                          onToggleHidePost(post.id, post.status === 'hidden' ? 'hidden' : 'live');
+                        }}
+                        className="cursor-pointer w-full text-left px-3.5 py-2 text-xs flex items-center gap-2.5 hover:bg-stone-100 text-stone-700 transition-colors font-medium"
+                      >
+                        {post.status === 'hidden' ? (
+                          <>
+                            <Eye className="w-3.5 h-3.5 text-emerald-700" />
+                            <span>Restore post to feed</span>
+                          </>
+                        ) : (
+                          <>
+                            <EyeOff className="w-3.5 h-3.5 text-rose-700" />
+                            <span>Hide post from feed</span>
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Post Title (clickable to dedicated page if onSelectPost provided) */}
+      {/* Post Title */}
       {post.title && (
         <h3
           onClick={() => onSelectPost && onSelectPost(post)}
@@ -370,18 +494,14 @@ export function PostCard({
                   className="cursor-pointer text-xs font-bold text-rose-900 hover:text-rose-950 inline-flex items-center gap-0.5 transition-colors"
                 >
                   <span>{isExpanded ? 'Show less' : 'Read full mushene'}</span>
-                  {isExpanded ? (
-                    <ChevronUp className="w-3.5 h-3.5" />
-                  ) : (
-                    <ChevronDown className="w-3.5 h-3.5" />
-                  )}
+                  {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                 </button>
               </div>
             )}
           </div>
         </div>
       ) : post.post_type === 'event' ? (
-        /* Structured Event Card Design with Date, Venue & RSVP */
+        /* Structured Event Card Design */
         <div className="bg-indigo-50/60 border border-indigo-200/80 rounded-2xl p-4 sm:p-4.5 space-y-3">
           <div className="flex flex-wrap items-center gap-2 text-xs text-indigo-950 font-medium">
             <div className="inline-flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-xl border border-indigo-200 shadow-2xs font-bold">
@@ -406,11 +526,7 @@ export function PostCard({
                 className="cursor-pointer text-xs font-semibold text-indigo-800 hover:text-indigo-950 inline-flex items-center gap-0.5 transition-colors"
               >
                 <span>{isExpanded ? 'Show less' : 'Read more details'}</span>
-                {isExpanded ? (
-                  <ChevronUp className="w-3.5 h-3.5" />
-                ) : (
-                  <ChevronDown className="w-3.5 h-3.5" />
-                )}
+                {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
               </button>
             </div>
           )}
@@ -442,7 +558,7 @@ export function PostCard({
           </div>
         </div>
       ) : post.post_type === 'ask_juja' ? (
-        /* Distinctive Ask Juja Question Card Layout */
+        /* Ask Juja Question Card */
         <div className="bg-gradient-to-br from-cyan-50/80 via-white to-sky-50/50 border border-cyan-200/90 rounded-2xl p-4 sm:p-5 space-y-3 shadow-2xs">
           <div className="flex items-center justify-between gap-2">
             <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-cyan-100 text-cyan-950 border border-cyan-300">
@@ -450,7 +566,7 @@ export function PostCard({
               <span>Ask Juja Question</span>
             </div>
             <span className="text-[11px] text-cyan-900 font-medium">
-              Juja campus community answers
+              Juja campus answers
             </span>
           </div>
 
@@ -485,7 +601,7 @@ export function PostCard({
           </div>
         </div>
       ) : (
-        /* Teaser Body with "Read more" / "Show less" Expander for other post types */
+        /* Regular Post Body */
         <div className="text-xs sm:text-sm text-zinc-700 leading-relaxed space-y-1.5">
           <p className="whitespace-pre-line">
             {isTruncated && !isExpanded ? teaser : post.body}
@@ -499,11 +615,7 @@ export function PostCard({
                 className="cursor-pointer text-xs font-semibold text-emerald-800 hover:text-emerald-950 inline-flex items-center gap-0.5 transition-colors"
               >
                 <span>{isExpanded ? 'Show less' : 'Read more'}</span>
-                {isExpanded ? (
-                  <ChevronUp className="w-3.5 h-3.5" />
-                ) : (
-                  <ChevronDown className="w-3.5 h-3.5" />
-                )}
+                {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
               </button>
 
               {onSelectPost && (
@@ -521,7 +633,7 @@ export function PostCard({
         </div>
       )}
 
-      {/* Lazy-Loaded Image with aspect preservation */}
+      {/* Lazy-Loaded Image */}
       {post.image_url && (
         <div
           onClick={() => onSelectPost && onSelectPost(post)}
@@ -542,9 +654,9 @@ export function PostCard({
         </div>
       )}
 
-      {/* Reactions and Action Bar */}
-      <div className="pt-2 border-t border-stone-100 flex flex-wrap items-center justify-between gap-2.5 text-xs text-zinc-500">
-        {/* Campus Flavored Reactions Bar (Laugh, Ni Kweli, Fire) */}
+      {/* Standard Bottom Action Bar (Jakob's Law: Reactions · Comments · Follow · Share) */}
+      <div className="pt-2 border-t border-stone-100 flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-500">
+        {/* Campus Reactions Bar */}
         <ReactionsBar
           postId={post.id}
           initialCounts={post.reactions_count}
@@ -552,27 +664,8 @@ export function PostCard({
           onRequireAuth={onRequireAuth}
         />
 
-        {/* Right Actions: Follow/Notify, Comments Toggle & Share */}
+        {/* Right Action Icons: Comments, Follow, Share */}
         <div className="flex items-center gap-1.5 sm:gap-2 ml-auto">
-          {/* Follow / Notify Button */}
-          <button
-            type="button"
-            onClick={handleToggleFollow}
-            className={`cursor-pointer inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium transition-colors border ${
-              isFollowed
-                ? 'bg-amber-50 text-amber-950 border-amber-300 font-semibold'
-                : 'bg-stone-50/80 border-stone-200/90 text-stone-600 hover:bg-stone-100 hover:border-stone-300'
-            }`}
-            title={isFollowed ? 'Following: You will be notified of new activity' : 'Follow: Get notified on new comments'}
-          >
-            {isFollowed ? (
-              <BellRing className="w-3.5 h-3.5 text-amber-600 animate-pulse" />
-            ) : (
-              <Bell className="w-3.5 h-3.5 text-stone-500" />
-            )}
-            <span className="text-[11px] font-semibold">{isFollowed ? 'Following' : 'Follow'}</span>
-          </button>
-
           {/* Comments Toggle Button */}
           <button
             type="button"
@@ -592,40 +685,84 @@ export function PostCard({
             </span>
           </button>
 
-          {/* Share as card Button (1080x1920 WhatsApp Status Card) */}
+          {/* Follow / Notify Button */}
           <button
             type="button"
-            onClick={() => setShareCardModalOpen(true)}
-            className="cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-emerald-950 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 transition-colors shadow-2xs"
-            title="Generate 1080x1920 vertical status card for WhatsApp"
+            onClick={handleToggleFollow}
+            className={`cursor-pointer inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium transition-colors border ${
+              isFollowed
+                ? 'bg-amber-50 text-amber-950 border-amber-300 font-semibold'
+                : 'bg-stone-50/80 border-stone-200/90 text-stone-600 hover:bg-stone-100 hover:border-stone-300'
+            }`}
+            title={isFollowed ? 'Following: You will be notified of new activity' : 'Follow: Get notified on new comments'}
           >
-            <Smartphone className="w-3.5 h-3.5 text-emerald-800" />
-            <span className="text-[11px] font-bold">Share as card</span>
+            {isFollowed ? (
+              <BellRing className="w-3.5 h-3.5 text-amber-600 animate-pulse" />
+            ) : (
+              <Bell className="w-3.5 h-3.5 text-stone-500" />
+            )}
+            <span className="text-[11px] font-semibold">{isFollowed ? 'Following' : 'Follow'}</span>
           </button>
 
-          {/* Share Button (opens Share modal with WhatsApp, Copy Link & Phone Share) */}
-          <button
-            type="button"
-            onClick={() => setShareModalOpen(true)}
-            className="cursor-pointer inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium text-emerald-800 bg-emerald-50/80 border border-emerald-200/80 hover:bg-emerald-100 transition-colors"
-            title="Share via WhatsApp, Copy Link, or Phone"
-          >
-            <Share2 className="w-3.5 h-3.5 text-emerald-700" />
-            <span className="text-[11px] font-semibold">Share</span>
-          </button>
-
-          {/* Report Button */}
-          {onReportPost && (
+          {/* Unified Share Button with Familiar Dropdown */}
+          <div className="relative" ref={shareMenuRef}>
             <button
               type="button"
-              onClick={() => onReportPost(post)}
-              className="cursor-pointer inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium text-stone-500 hover:text-rose-700 hover:bg-rose-50 hover:border-rose-200 border border-stone-200/80 transition-colors"
-              title="Report post to moderators"
+              onClick={() => setShareMenuOpen(!shareMenuOpen)}
+              aria-expanded={shareMenuOpen}
+              className="cursor-pointer inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium text-emerald-800 bg-emerald-50/80 border border-emerald-200/80 hover:bg-emerald-100 transition-colors"
+              title="Share post via WhatsApp, Story Card, or Link"
             >
-              <Flag className="w-3.5 h-3.5 text-stone-400" />
-              <span className="text-[11px] font-semibold">Report</span>
+              <Share2 className="w-3.5 h-3.5 text-emerald-700" />
+              <span className="text-[11px] font-semibold">Share</span>
             </button>
-          )}
+
+            {shareMenuOpen && (
+              <div
+                role="menu"
+                className="absolute right-0 bottom-full mb-1 w-56 bg-white rounded-2xl shadow-lg border border-stone-200/90 py-1.5 z-40 animate-in fade-in zoom-in-95 duration-100"
+              >
+                {/* 1080x1920 Status Card */}
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setShareMenuOpen(false);
+                    setShareCardModalOpen(true);
+                  }}
+                  className="cursor-pointer w-full text-left px-3.5 py-2 text-xs flex items-center gap-2.5 hover:bg-emerald-50 text-emerald-950 transition-colors font-medium"
+                >
+                  <Smartphone className="w-4 h-4 text-emerald-800" />
+                  <span>WhatsApp Status Card (HD)</span>
+                </button>
+
+                {/* Standard Share (WhatsApp / Phone) */}
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setShareMenuOpen(false);
+                    setShareModalOpen(true);
+                  }}
+                  className="cursor-pointer w-full text-left px-3.5 py-2 text-xs flex items-center gap-2.5 hover:bg-stone-50 text-stone-700 transition-colors"
+                >
+                  <Share2 className="w-4 h-4 text-emerald-700" />
+                  <span>Share via WhatsApp / Apps</span>
+                </button>
+
+                {/* Quick Copy Link */}
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={handleCopyLink}
+                  className="cursor-pointer w-full text-left px-3.5 py-2 text-xs flex items-center gap-2.5 hover:bg-stone-50 text-stone-700 transition-colors"
+                >
+                  <LinkIcon className="w-4 h-4 text-stone-500" />
+                  <span>{copiedLink ? 'Link copied! ✓' : 'Copy link to clipboard'}</span>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -636,7 +773,7 @@ export function PostCard({
         </div>
       )}
 
-      {/* Expandable Open Threaded Comments Section */}
+      {/* Expandable Comments Section */}
       {showComments && (
         <CommentsSection
           postId={post.id}
@@ -647,14 +784,13 @@ export function PostCard({
         />
       )}
 
-      {/* Standard Share Modal Dialog */}
+      {/* Share Modals */}
       <ShareModal
         post={post}
         isOpen={shareModalOpen}
         onClose={() => setShareModalOpen(false)}
       />
 
-      {/* 1080x1920 Vertical Status Card Generator Modal */}
       <ShareCardModal
         post={post}
         isOpen={shareCardModalOpen}

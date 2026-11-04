@@ -12,12 +12,14 @@ import { fetchProfile, signOut } from './lib/auth';
 import { supabase } from './lib/supabase';
 import { togglePostStatus } from './lib/moderation';
 import { SEED_JUJA_POSTS } from './lib/posts';
-import { Profile, Post, FeedPost, CommentWithAuthor, Community } from './types';
+import { Profile, Post, FeedPost, CommentWithAuthor, Community, PostType } from './types';
 import { UserPlus, Sparkles, ShieldCheck, Key, Plus } from 'lucide-react';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { YourCommunitiesRow } from './components/YourCommunitiesRow';
 import { CommunityHeader } from './components/CommunityHeader';
+import { DesktopCommunitySidebar } from './components/DesktopCommunitySidebar';
+import { BottomNavBar } from './components/BottomNavBar';
 import {
   getAllCommunities,
   getCommunityBySlug,
@@ -95,6 +97,8 @@ export default function App() {
   const [composerOpen, setComposerOpen] = useState(false);
   const [memeStudioOpen, setMemeStudioOpen] = useState(false);
   const [composerInitialMeme, setComposerInitialMeme] = useState<{ file: File; previewUrl: string; caption: string } | null>(null);
+  const [composerInitialType, setComposerInitialType] = useState<PostType | undefined>(undefined);
+  const [searchQuery, setSearchQuery] = useState('');
   const [loadingSession, setLoadingSession] = useState(true);
   const [lastCreatedPost, setLastCreatedPost] = useState<FeedPost | null>(null);
   const [authPromptMessage, setAuthPromptMessage] = useState<string | null>(null);
@@ -341,131 +345,97 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#FAF9F6] text-zinc-900 pb-20">
-      {/* Top Bar with brand and user session */}
+      {/* Top Bar with brand, search, new post CTA and user session */}
       <TopBar
         profile={profile}
         userEmail={currentUser?.email}
+        activeCommunity={activeCommunity}
+        searchQuery={searchQuery}
+        onSearchChange={(q) => setSearchQuery(q)}
         onOpenAuth={() => setAuthModalOpen(true)}
         onOpenProfile={() => setOnboardingOpen(true)}
         onNavigateHome={handleBackToFeed}
         onOpenAdmin={() => setAdminDashboardOpen(true)}
         onOpenAbout={() => setAboutModalOpen(true)}
+        onOpenComposer={() => {
+          if (profile) {
+            setComposerInitialType(undefined);
+            setComposerOpen(true);
+          } else {
+            handleRequireAuth(`Sign in with your campus account to create a post in ${activeCommunity.name}!`);
+          }
+        }}
+        onOpenDiscover={() => setDiscoverOpen(true)}
+        onSignOut={handleSignOut}
       />
 
-      {/* Main mobile-first container */}
-      <main className="flex-1 w-full max-w-md md:max-w-xl mx-auto px-4 py-6 space-y-6">
+      {/* Main Container: Responsive 2-Column Desktop Grid adhering to Jakob's Law */}
+      <main className="flex-1 w-full max-w-6xl mx-auto px-3 sm:px-4 py-4 pb-20 md:pb-8">
         {activePostId ? (
           /* Dedicated Post View with its own URL, meta tags, and open discussion */
-          <PostDetailPage
-            postId={activePostId}
-            initialPost={activePost}
-            currentUserProfile={profile}
-            onBack={handleBackToFeed}
-            onNavigateToPost={handleNavigateToPost}
-            onRequireAuth={handleRequireAuth}
-            onReportPost={handleReportPost}
-            onReportComment={handleReportComment}
-          />
-        ) : (
-          /* Multi-Campus Hub & Feed */
-          <>
-            {/* "Your communities" Row */}
-            <YourCommunitiesRow
-              communities={allCommunities}
-              joinedSlugs={joinedSlugs}
-              activeSlug={activeSlug}
-              onSelectCommunity={handleSelectCommunity}
-              onOpenDiscover={() => setDiscoverOpen(true)}
-              onRequestCommunity={() => setRequestCommunityOpen(true)}
-            />
-
-            {/* Active Community Banner & Header */}
-            <CommunityHeader
-              community={activeCommunity}
+          <div className="max-w-2xl mx-auto">
+            <PostDetailPage
+              postId={activePostId}
+              initialPost={activePost}
               currentUserProfile={profile}
-              isJoined={isCommunityJoined(activeSlug)}
-              onToggleJoin={() => handleToggleJoin(activeSlug)}
-              onOpenRules={() => setAboutModalOpen(true)}
-              onOpenModTools={() => setModToolsOpen(true)}
-            />
-
-            {/* PWA Home Screen Install Banner */}
-            <PWAInstallButton variant="banner" />
-
-            {/* Quick Post Prompt Bar */}
-            <div className="bg-white border border-stone-200/90 rounded-2xl p-3.5 shadow-xs flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-9 h-9 rounded-full bg-emerald-100/70 text-emerald-800 flex items-center justify-center text-sm shrink-0 border border-emerald-200">
-                  {profile?.persona_avatar || activeCommunity.icon || '🎓'}
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold text-zinc-900 truncate">
-                    {profile ? (
-                      <>Ready to post in {activeCommunity.name}, {profile.real_name}?</>
-                    ) : (
-                      <>Have something to share in {activeCommunity.name}?</>
-                    )}
-                  </p>
-                  <p className="text-[11px] text-zinc-500 truncate">
-                    {profile?.persona_name ? (
-                      <>Post as {profile.real_name} or {profile.persona_name}</>
-                    ) : (
-                      <>Tap to compose a Story, Meme, or Photo</>
-                    )}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setMemeStudioOpen(true)}
-                  className="min-h-[38px] px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
-                  title="Open Campus Meme Studio"
-                >
-                  <span className="text-sm">😂</span>
-                  <span className="hidden sm:inline">Meme Studio</span>
-                  <span className="sm:hidden">Meme</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (profile) {
-                      setComposerOpen(true);
-                    } else {
-                      setAuthModalOpen(true);
-                    }
-                  }}
-                  className="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 shadow-xs"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Create</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Live Posts Feed */}
-            <FeedSection
-              newlyCreatedPost={lastCreatedPost}
-              currentUserProfile={profile}
-              activeCommunity={activeCommunity}
+              onBack={handleBackToFeed}
+              onNavigateToPost={handleNavigateToPost}
               onRequireAuth={handleRequireAuth}
-              onSelectPost={handleNavigateToPost}
               onReportPost={handleReportPost}
               onReportComment={handleReportComment}
-              onToggleHidePost={handleToggleHidePost}
-              onSelectCommunity={handleSelectCommunity}
-              onOpenComposer={() => {
-                if (profile) {
-                  setComposerOpen(true);
-                } else {
-                  handleRequireAuth(`Sign in with your campus account to create a post in ${activeCommunity.name}!`);
-                }
-              }}
             />
-          </>
-        )}
+          </div>
+        ) : (
+          /* Multi-Campus Hub & Feed: Left Feed Column (8 cols) + Right Sidebar (4 cols) */
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            {/* Left Main Stream */}
+            <div className="lg:col-span-8 space-y-4">
+              {/* "Your communities" Row */}
+              <YourCommunitiesRow
+                communities={allCommunities}
+                joinedSlugs={joinedSlugs}
+                activeSlug={activeSlug}
+                onSelectCommunity={handleSelectCommunity}
+                onOpenDiscover={() => setDiscoverOpen(true)}
+                onRequestCommunity={() => setRequestCommunityOpen(true)}
+              />
+
+              {/* Active Community Banner & Header */}
+              <CommunityHeader
+                community={activeCommunity}
+                currentUserProfile={profile}
+                isJoined={isCommunityJoined(activeSlug)}
+                onToggleJoin={() => handleToggleJoin(activeSlug)}
+                onOpenRules={() => setAboutModalOpen(true)}
+                onOpenModTools={() => setModToolsOpen(true)}
+              />
+
+              {/* PWA Home Screen Install Banner */}
+              <PWAInstallButton variant="banner" />
+
+              {/* Live Posts Feed with FeedComposerCard and Filter Tabs */}
+              <FeedSection
+                newlyCreatedPost={lastCreatedPost}
+                currentUserProfile={profile}
+                activeCommunity={activeCommunity}
+                searchQuery={searchQuery}
+                onClearSearch={() => setSearchQuery('')}
+                onRequireAuth={handleRequireAuth}
+                onSelectPost={handleNavigateToPost}
+                onReportPost={handleReportPost}
+                onReportComment={handleReportComment}
+                onToggleHidePost={handleToggleHidePost}
+                onSelectCommunity={handleSelectCommunity}
+                onOpenComposer={(initialType) => {
+                  if (profile) {
+                    setComposerInitialType(initialType);
+                    setComposerOpen(true);
+                  } else {
+                    handleRequireAuth(`Sign in with your campus account to create a post in ${activeCommunity.name}!`);
+                  }
+                }}
+                onOpenMemeStudio={() => setMemeStudioOpen(true)}
+              />
 
         {/* Authentication Card (if logged in, show ProfileCard; if logged out, show CTA) */}
         {loadingSession ? (
@@ -578,11 +548,47 @@ export default function App() {
             </button>
           </div>
         </footer>
+            </div>
+
+            {/* Right Column: Desktop Community Sidebar (hidden lg:block lg:col-span-4 sticky top-18) */}
+            <div className="hidden lg:block lg:col-span-4 sticky top-18 space-y-4">
+              <DesktopCommunitySidebar
+                community={activeCommunity}
+                currentUserProfile={profile}
+                onToggleJoin={handleToggleJoin}
+                onOpenRules={() => setAboutModalOpen(true)}
+                onOpenDiscover={() => setDiscoverOpen(true)}
+                onRequestCommunity={() => setRequestCommunityOpen(true)}
+                onOpenModTools={() => setModToolsOpen(true)}
+                onSelectPost={handleNavigateToPost}
+              />
+            </div>
+          </div>
+        )}
       </main>
 
-      {/* Floating Action Button for Post Creation */}
-      <FloatingCreateButton
-        onOpenComposer={() => setComposerOpen(true)}
+      {/* Mobile Bottom Navigation Bar (Jakob's Law) */}
+      <BottomNavBar
+        profile={profile}
+        onNavigateHome={handleBackToFeed}
+        onOpenDiscover={() => setDiscoverOpen(true)}
+        onOpenComposer={() => {
+          if (profile) {
+            setComposerInitialType(undefined);
+            setComposerOpen(true);
+          } else {
+            handleRequireAuth(`Sign in with your campus account to create a post in ${activeCommunity.name}!`);
+          }
+        }}
+        onOpenAbout={() => setAboutModalOpen(true)}
+        onOpenProfile={() => {
+          if (profile) {
+            setOnboardingOpen(true);
+          } else {
+            setAuthModalOpen(true);
+          }
+        }}
+        onOpenAuth={() => setAuthModalOpen(true)}
       />
 
       {/* Post Composer Modal */}
@@ -590,11 +596,12 @@ export default function App() {
         isOpen={composerOpen}
         profile={profile}
         community={activeCommunity}
-        initialPostType={composerInitialMeme ? 'meme' : undefined}
+        initialPostType={composerInitialMeme ? 'meme' : composerInitialType}
         initialMemeResult={composerInitialMeme}
         onClose={() => {
           setComposerOpen(false);
           setComposerInitialMeme(null);
+          setComposerInitialType(undefined);
         }}
         onPostCreated={(post) => {
           setComposerInitialMeme(null);

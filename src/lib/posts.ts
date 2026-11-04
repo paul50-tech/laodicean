@@ -68,7 +68,8 @@ export function truncateTeaser(
 export function filterFeedPosts(
   posts: FeedPost[],
   filter: FeedFilter,
-  communitySlug?: string
+  communitySlug?: string,
+  searchQuery?: string
 ): FeedPost[] {
   let result = posts;
   if (communitySlug && communitySlug !== 'all') {
@@ -76,8 +77,21 @@ export function filterFeedPosts(
       (post) => (post.community_slug || 'juja').toLowerCase() === communitySlug.toLowerCase()
     );
   }
-  if (filter === 'all') return result;
-  return result.filter((post) => post.post_type === filter);
+  if (filter !== 'all') {
+    result = result.filter((post) => post.post_type === filter);
+  }
+  if (searchQuery && searchQuery.trim()) {
+    const q = searchQuery.trim().toLowerCase();
+    result = result.filter(
+      (post) =>
+        (post.title && post.title.toLowerCase().includes(q)) ||
+        (post.body && post.body.toLowerCase().includes(q)) ||
+        (post.persona_name && post.persona_name.toLowerCase().includes(q)) ||
+        (post.author_real_name && post.author_real_name.toLowerCase().includes(q)) ||
+        (post.post_type && post.post_type.toLowerCase().includes(q))
+    );
+  }
+  return result;
 }
 
 /**
@@ -626,6 +640,12 @@ export const SEED_JUJA_POSTS: FeedPost[] = [
     reactions_count: { laugh: 154, relatable: 182, fire: 62, total: 398 },
     comments_count: 73,
   },
+];
+
+/**
+ * Seed posts for other university campus communities in Kenya.
+ */
+export const SEED_OTHER_CAMPUS_POSTS: FeedPost[] = [
   // Rongai (MMU & CUEA) posts
   {
     id: 'seed-rongai-1',
@@ -654,6 +674,7 @@ export const SEED_JUJA_POSTS: FeedPost[] = [
     title: 'Best Friday Sunset Hangout Spot in Rongai',
     body: 'Where is the prime comrades chill spot after a long week of media lab projects and cat tests?',
     is_persona: false,
+    persona_name: '',
     author_real_name: 'Cyrus Maina',
     author_role: 'moderator',
     status: 'live',
@@ -703,6 +724,7 @@ export const SEED_JUJA_POSTS: FeedPost[] = [
     title: 'Strathmore Tech & Fintech Pitch Marathon 2026',
     body: 'Today 14 student fintech teams pitched cross-border mobile payment and student micro-investing platforms to local venture capitalists at the SBS Auditorium. Over 1.5M KES in pilot grants were awarded to student founders.',
     is_persona: false,
+    persona_name: '',
     author_real_name: 'Grace Ndinda',
     author_role: 'moderator',
     status: 'live',
@@ -739,6 +761,7 @@ export const SEED_JUJA_POSTS: FeedPost[] = [
     title: 'Parklands Law Moot Court Championship: Constitutional Review',
     body: 'The 2026 All-Kenya Moot Court preliminaries commenced today at the Parklands Appellate Moot Courtroom. The case studies digital surveillance privacy rights versus public security doctrine. High-caliber advocacy on display from 2nd and 3rd year barristers!',
     is_persona: false,
+    persona_name: '',
     author_real_name: 'Kevin Omondi',
     author_role: 'moderator',
     status: 'live',
@@ -765,6 +788,11 @@ export const SEED_JUJA_POSTS: FeedPost[] = [
     reactions_count: { laugh: 112, relatable: 76, fire: 34, total: 222 },
     comments_count: 41,
   },
+];
+
+export const SEED_ALL_POSTS: FeedPost[] = [
+  ...SEED_JUJA_POSTS,
+  ...SEED_OTHER_CAMPUS_POSTS,
 ];
 
 /**
@@ -971,6 +999,7 @@ export interface FetchFeedParams {
   pageSize?: number;
   filter?: FeedFilter;
   communitySlug?: string;
+  searchQuery?: string;
 }
 
 export interface FeedResponse {
@@ -991,6 +1020,7 @@ export async function fetchInfiniteFeed(
     pageSize = 6,
     filter = 'all',
     communitySlug,
+    searchQuery,
   } = params;
 
   // If Supabase is available, try fetching real live posts
@@ -1116,10 +1146,17 @@ export async function fetchInfiniteFeed(
     }
   }
 
-  // Fallback to offline cached posts or seed posts with intelligent ranking
-  const cachedPool = getOfflineFeedCache();
-  const sourcePool = cachedPool && cachedPool.length > 0 ? cachedPool : SEED_JUJA_POSTS;
-  const filteredSeed = filterFeedPosts(sourcePool, filter, communitySlug);
+  // Fallback to offline cached posts merged with seed posts with intelligent ranking
+  const cachedPool = getOfflineFeedCache() || [];
+  const poolMap = new Map<string, FeedPost>();
+  for (const post of SEED_ALL_POSTS) {
+    poolMap.set(post.id, post);
+  }
+  for (const post of cachedPool) {
+    poolMap.set(post.id, post);
+  }
+  const sourcePool = Array.from(poolMap.values());
+  const filteredSeed = filterFeedPosts(sourcePool, filter, communitySlug, searchQuery);
   const rankedSeed = rankCampusFeed(filteredSeed);
   const start = page * pageSize;
   const end = start + pageSize;
@@ -1153,7 +1190,7 @@ export async function fetchPostById(id: string): Promise<FeedPost | null> {
   if (!id) return null;
 
   // Check seed posts first if it starts with 'seed-'
-  const seedMatch = SEED_JUJA_POSTS.find((p) => p.id === id);
+  const seedMatch = SEED_ALL_POSTS.find((p) => p.id === id);
   if (seedMatch) {
     return seedMatch;
   }

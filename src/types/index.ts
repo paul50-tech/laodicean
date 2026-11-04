@@ -40,6 +40,7 @@ export interface Community {
   accent_color?: string;
   icon?: string;
   banner?: string | null;
+  banner_url?: string | null;
   rules: string[];
   status: CommunityStatus;
   member_count: number;
@@ -55,13 +56,15 @@ export interface CommunityRequest {
   id: string;
   name: string;
   slug: string;
-  tagline: string;
-  description: string;
+  tagline?: string;
+  description?: string;
   color: string;
+  accent_color?: string;
   icon: string;
   banner?: string | null;
+  banner_url?: string | null;
   rules: string[];
-  requester_id: string;
+  requester_id?: string;
   requester_name: string;
   requester_persona?: string | null;
   status: 'pending' | 'approved' | 'rejected';

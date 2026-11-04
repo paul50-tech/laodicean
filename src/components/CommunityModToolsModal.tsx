@@ -43,7 +43,7 @@ export function CommunityModToolsModal({
   // Appearance Tab state
   const [tagline, setTagline] = useState(community.tagline || '');
   const [description, setDescription] = useState(community.description || '');
-  const [bannerUrl, setBannerUrl] = useState(community.banner_url || '');
+  const [bannerUrl, setBannerUrl] = useState(community.banner_url || community.banner || '');
   const [color, setColor] = useState(community.color || '#064e3b');
   const [accentColor, setAccentColor] = useState(community.accent_color || '#10b981');
   const [savingDetails, setSavingDetails] = useState(false);
@@ -82,6 +82,7 @@ export function CommunityModToolsModal({
       const res = await updateCommunityDetails(community.slug, {
         tagline: tagline.trim(),
         description: description.trim(),
+        banner: bannerUrl.trim() || undefined,
         banner_url: bannerUrl.trim() || undefined,
         color,
         accent_color: accentColor,

@@ -363,14 +363,19 @@ export function saveCommunityRequests(requests: CommunityRequest[]): void {
 export interface RequestCommunityInput {
   name: string;
   slug: string;
-  tagline: string;
-  description: string;
-  color: string;
-  icon: string;
+  tagline?: string;
+  description?: string;
+  color?: string;
+  accent_color?: string;
+  icon?: string;
   banner?: string | null;
+  banner_url?: string | null;
   rules?: string[];
-  requesterId: string;
-  requesterName: string;
+  requester_id?: string;
+  requester_name?: string;
+  requester_persona?: string | null;
+  requesterId?: string;
+  requesterName?: string;
   requesterPersona?: string | null;
 }
 
@@ -402,15 +407,8 @@ export function requestNewCommunity(input: RequestCommunityInput): {
     return { success: false, error: `Handle "/c/${slug}" is already taken by an existing community.` };
   }
 
-  const tagline = input.tagline?.trim();
-  if (!tagline || tagline.length < 5) {
-    return { success: false, error: 'Please provide a short campus tagline (at least 5 characters).' };
-  }
-
-  const description = input.description?.trim();
-  if (!description || description.length < 10) {
-    return { success: false, error: 'Please describe the community purpose (at least 10 characters).' };
-  }
+  const tagline = input.tagline?.trim() || 'Campus stories, memes & student life';
+  const description = input.description?.trim() || `Verified student community for ${name}.`;
 
   const defaultRules = [
     `Respect all members of ${name}. Zero tolerance for harassment or discrimination.`,
@@ -420,6 +418,10 @@ export function requestNewCommunity(input: RequestCommunityInput): {
     'Posts with 3 reports are auto-hidden pending community moderator review.',
   ];
 
+  const requesterName = input.requester_name || input.requesterName || 'Campus Member';
+  const requesterId = input.requester_id || input.requesterId || `user-${Date.now()}`;
+  const requesterPersona = input.requester_persona || input.requesterPersona || null;
+
   const newReq: CommunityRequest = {
     id: `req-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     name,
@@ -427,12 +429,14 @@ export function requestNewCommunity(input: RequestCommunityInput): {
     tagline,
     description,
     color: input.color || '#064e3b',
+    accent_color: input.accent_color || '#10b981',
     icon: input.icon || '🎓',
-    banner: input.banner || 'https://images.unsplash.com/photo-1541339907198-e08756dedf3f?auto=format&fit=crop&w=1200&q=80',
+    banner: input.banner || input.banner_url || 'https://images.unsplash.com/photo-1541339907198-e08756dedf3f?auto=format&fit=crop&w=1200&q=80',
+    banner_url: input.banner_url || input.banner || 'https://images.unsplash.com/photo-1541339907198-e08756dedf3f?auto=format&fit=crop&w=1200&q=80',
     rules: input.rules && input.rules.length >= 3 ? input.rules : defaultRules,
-    requester_id: input.requesterId,
-    requester_name: input.requesterName,
-    requester_persona: input.requesterPersona || null,
+    requester_id: requesterId,
+    requester_name: requesterName,
+    requester_persona: requesterPersona,
     status: 'pending',
     created_at: new Date().toISOString(),
   };
@@ -474,23 +478,25 @@ export function approveCommunityRequest(
   saveCommunityRequests(updatedRequests);
 
   // Create new active community
+  const creatorId = req.requester_id || `creator-${Date.now()}`;
   const newCommunity: Community = {
     id: `comm-${req.slug}-${Date.now()}`,
     name: req.name,
     slug: req.slug,
     tagline: req.tagline,
-    description: req.description,
+    description: req.description || `Verified student community for ${req.name}.`,
     color: req.color,
-    accent_color: req.color,
+    accent_color: req.accent_color || req.color,
     icon: req.icon,
-    banner: req.banner,
+    banner: req.banner || req.banner_url,
+    banner_url: req.banner_url || req.banner,
     rules: req.rules,
     status: 'approved',
     member_count: 1,
-    created_by: req.requester_id,
+    created_by: creatorId,
     creator_name: req.requester_name,
     creator_persona: req.requester_persona,
-    moderator_ids: [req.requester_id, JUJA_COMMUNITY_ID],
+    moderator_ids: [creatorId, JUJA_COMMUNITY_ID],
     created_at: new Date().toISOString(),
   };
 
@@ -508,7 +514,7 @@ export function approveCommunityRequest(
  */
 export function rejectCommunityRequest(
   requestId: string,
-  reason: string,
+  reason: string = 'Did not meet campus standards.',
   reviewerId: string = JUJA_COMMUNITY_ID
 ): { success: boolean; error?: string } {
   const requests = getCommunityRequests();
@@ -532,32 +538,47 @@ export function rejectCommunityRequest(
   return { success: true };
 }
 
+export type { CommunityRequest } from '../types';
+
 /**
  * Checks if a user has moderator rights in a specific community.
  * Grants access if:
  * 1. User is global super admin ('pauljubilee50@gmail.com' or role === 'admin')
  * 2. User ID is in community.moderator_ids
- * 3. User created this community (community.created_by === profile.id)
+ * 3. User created this community (community.created_by === userId)
  */
 export function isUserCommunityModerator(
   community: Community,
-  profile: Profile | null,
-  userEmail?: string | null
+  profileOrUserId?: Profile | string | null,
+  userEmailOrRole?: string | null
 ): boolean {
   if (!community) return false;
 
+  const role =
+    typeof profileOrUserId === 'object' && profileOrUserId !== null
+      ? profileOrUserId.role
+      : userEmailOrRole === 'admin'
+      ? 'admin'
+      : undefined;
+
+  const email = userEmailOrRole?.includes('@') ? userEmailOrRole : undefined;
+  const userId =
+    typeof profileOrUserId === 'string'
+      ? profileOrUserId
+      : profileOrUserId?.id;
+
   // Super Admin override
-  if (profile?.role === 'admin' || userEmail === 'pauljubilee50@gmail.com') {
+  if (role === 'admin' || email === 'pauljubilee50@gmail.com') {
     return true;
   }
 
-  if (!profile?.id) return false;
+  if (!userId) return false;
 
-  if (community.created_by && community.created_by === profile.id) {
+  if (community.created_by && community.created_by === userId) {
     return true;
   }
 
-  if (Array.isArray(community.moderator_ids) && community.moderator_ids.includes(profile.id)) {
+  if (Array.isArray(community.moderator_ids) && community.moderator_ids.includes(userId)) {
     return true;
   }
 
@@ -568,11 +589,13 @@ export function isUserCommunityModerator(
  * Updates community rules (moderator action).
  */
 export function updateCommunityRules(
-  communityId: string,
+  communityIdOrSlug: string,
   rules: string[]
-): { success: boolean; error?: string } {
+): { success: boolean; error?: string; community?: Community } {
   const all = getAllCommunities();
-  const index = all.findIndex((c) => c.id === communityId);
+  const index = all.findIndex(
+    (c) => c.id === communityIdOrSlug || c.slug === communityIdOrSlug
+  );
   if (index === -1) {
     return { success: false, error: 'Community not found.' };
   }
@@ -584,18 +607,20 @@ export function updateCommunityRules(
   const updated = [...all];
   updated[index] = { ...updated[index], rules };
   saveCommunities(updated);
-  return { success: true };
+  return { success: true, community: updated[index] };
 }
 
 /**
  * Updates community details (tagline, banner, color, etc.)
  */
 export function updateCommunityDetails(
-  communityId: string,
+  communityIdOrSlug: string,
   updates: Partial<Community>
-): { success: boolean; error?: string } {
+): { success: boolean; error?: string; community?: Community } {
   const all = getAllCommunities();
-  const index = all.findIndex((c) => c.id === communityId);
+  const index = all.findIndex(
+    (c) => c.id === communityIdOrSlug || c.slug === communityIdOrSlug
+  );
   if (index === -1) {
     return { success: false, error: 'Community not found.' };
   }
@@ -608,13 +633,20 @@ export function updateCommunityDetails(
     slug: updated[index].slug, // protect slug
   };
   saveCommunities(updated);
-  return { success: true };
+  return { success: true, community: updated[index] };
 }
 
 /**
  * Builds a clean, shareable URL for a community.
  */
-export function formatCommunityShareUrl(community: Community, origin?: string): string {
-  const base = origin || (typeof window !== 'undefined' ? window.location.origin : 'https://laodicean.app');
-  return `${base.replace(/\/$/, '')}/?c=${encodeURIComponent(community.slug)}`;
+export function formatCommunityShareUrl(
+  communityOrSlug: Community | string,
+  origin?: string
+): string {
+  const base =
+    origin ||
+    (typeof window !== 'undefined' ? window.location.origin : 'https://laodicean.app');
+  const slug =
+    typeof communityOrSlug === 'string' ? communityOrSlug : communityOrSlug.slug;
+  return `${base.replace(/\/$/, '')}/?c=${encodeURIComponent(slug)}`;
 }

@@ -59,9 +59,8 @@ import {
   approveCommunityRequest,
   rejectCommunityRequest,
   getAllCommunities,
-  CommunityRequest,
 } from '../lib/communities';
-import { Community } from '../types';
+import { Community, CommunityRequest } from '../types';
 
 interface AdminDashboardModalProps {
   isOpen: boolean;

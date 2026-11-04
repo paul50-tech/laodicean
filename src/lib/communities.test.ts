@@ -108,7 +108,7 @@ test('approveCommunityRequest turns pending request into active community and ap
   assert.ok(approved.community);
   assert.equal(approved.community.status, 'approved');
   assert.equal(approved.community.created_by, req.requester_id);
-  assert.ok(approved.community.moderator_ids.includes(req.requester_id));
+  assert.ok(approved.community.moderator_ids.includes(req.requester_id!));
 
   // Re-approving fails gracefully
   const doubleApprove = approveCommunityRequest(req.id);

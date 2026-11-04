@@ -289,3 +289,26 @@ test('SEED_JUJA_POSTS are valid, newest first, and belong to Juja', async () => 
     assert.ok(timeA >= timeB, `Post ${i} should be newer than or equal to Post ${i + 1}`);
   }
 });
+
+test('filterFeedPosts filters by searchQuery across title, body, persona and post type', async () => {
+  const { filterFeedPosts, SEED_JUJA_POSTS } = await import('./posts');
+
+  // Search keyword matching title or body
+  const chapoResults = filterFeedPosts(SEED_JUJA_POSTS, 'all', 'juja', 'chapo');
+  assert.ok(chapoResults.length > 0);
+  assert.ok(
+    chapoResults.every((p) =>
+      p.body.toLowerCase().includes('chapo') || (p.title && p.title.toLowerCase().includes('chapo'))
+    )
+  );
+
+  // Search keyword matching persona name
+  const personaResults = filterFeedPosts(SEED_JUJA_POSTS, 'all', 'juja', 'kachumbari');
+  assert.ok(personaResults.length > 0);
+  assert.ok(personaResults.some((p) => p.persona_name.toLowerCase().includes('kachumbari')));
+
+  // Search non-existent keyword returns empty array
+  const emptyResults = filterFeedPosts(SEED_JUJA_POSTS, 'all', 'juja', 'xyznonexistentword99');
+  assert.strictEqual(emptyResults.length, 0);
+});
+

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { CommentWithAuthor, FeedPost, FeedFilter, Profile, Community } from '../types';
+import { CommentWithAuthor, FeedPost, FeedFilter, Profile, Community, PostType } from '../types';
 import { fetchInfiniteFeed, fetchPostById, SEED_JUJA_POSTS } from '../lib/posts';
 import { getPinnedPollId, setPinnedPollId } from '../lib/polls';
 import { FeedFilterChips } from './FeedFilterChips';
@@ -8,19 +8,25 @@ import { MusheneStoriesBar } from './MusheneStoriesBar';
 import { CampusPulseBar } from './CampusPulseBar';
 import { TrendingStrip } from './TrendingStrip';
 import { MemeOfTheWeekSection } from './MemeOfTheWeekSection';
+import { FeedComposerCard } from './FeedComposerCard';
 import {
   Sparkles,
   RefreshCw,
   Plus,
   Loader2,
   CheckCircle,
+  Search,
+  X,
 } from 'lucide-react';
 
 interface FeedSectionProps {
-  onOpenComposer: () => void;
+  onOpenComposer: (initialType?: PostType) => void;
+  onOpenMemeStudio?: () => void;
   newlyCreatedPost?: FeedPost | null;
   currentUserProfile?: Profile | null;
   activeCommunity?: Community | null;
+  searchQuery?: string;
+  onClearSearch?: () => void;
   onRequireAuth: (message: string) => void;
   onSelectPost?: (post: FeedPost) => void;
   onReportPost?: (post: FeedPost) => void;
@@ -33,9 +39,12 @@ const PAGE_SIZE = 5;
 
 export function FeedSection({
   onOpenComposer,
+  onOpenMemeStudio,
   newlyCreatedPost,
   currentUserProfile,
   activeCommunity,
+  searchQuery = '',
+  onClearSearch,
   onRequireAuth,
   onSelectPost,
   onReportPost,
@@ -67,7 +76,7 @@ export function FeedSection({
     return () => window.removeEventListener('pinned-poll-change', handlePinnedChange);
   }, []);
 
-  // Listen to post-status-changed event (e.g. 1-tap hide/restore from Admin Deck or PostCard)
+  // Listen to post-status-changed event
   useEffect(() => {
     const handleStatusChange = (e: any) => {
       const { postId, status } = e.detail || {};
@@ -83,7 +92,7 @@ export function FeedSection({
     return () => window.removeEventListener('post-status-changed', handleStatusChange);
   }, []);
 
-  // Listen to feed-post-approved event (e.g. approved from Guest Blogger review queue)
+  // Listen to feed-post-approved event
   useEffect(() => {
     const handleApproved = (e: any) => {
       const approved = e.detail?.post as FeedPost;
@@ -158,9 +167,9 @@ export function FeedSection({
 
   const commSlug = activeCommunity?.slug || 'juja';
 
-  // Load initial page of posts or on filter change
+  // Load initial page of posts or on filter/search change
   const loadInitialFeed = useCallback(
-    async (selectedFilter: FeedFilter) => {
+    async (selectedFilter: FeedFilter, searchStr = searchQuery) => {
       setLoading(true);
       try {
         const res = await fetchInfiniteFeed({
@@ -168,6 +177,7 @@ export function FeedSection({
           pageSize: PAGE_SIZE,
           filter: selectedFilter,
           communitySlug: commSlug,
+          searchQuery: searchStr,
         });
 
         // If user just created a post matching the current filter, prepend it
@@ -187,7 +197,7 @@ export function FeedSection({
         setLoading(false);
       }
     },
-    [newlyCreatedPost, commSlug]
+    [newlyCreatedPost, commSlug, searchQuery]
   );
 
   // Load next batch for infinite scroll
@@ -203,6 +213,7 @@ export function FeedSection({
         pageSize: PAGE_SIZE,
         filter,
         communitySlug: commSlug,
+        searchQuery,
       });
 
       setPosts((prev) => {
@@ -216,18 +227,18 @@ export function FeedSection({
     } finally {
       setLoadingMore(false);
     }
-  }, [loading, loadingMore, hasMore, page, filter, commSlug]);
+  }, [loading, loadingMore, hasMore, page, filter, commSlug, searchQuery]);
 
-  // Trigger load on filter change or community switch
+  // Trigger load on filter, search, or community switch
   useEffect(() => {
-    loadInitialFeed(filter);
-  }, [filter, commSlug, loadInitialFeed]);
+    loadInitialFeed(filter, searchQuery);
+  }, [filter, commSlug, searchQuery, loadInitialFeed]);
 
   // Pull-to-refresh / manual refresh
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
-      await loadInitialFeed(filter);
+      await loadInitialFeed(filter, searchQuery);
     } finally {
       setRefreshing(false);
     }
@@ -259,9 +270,9 @@ export function FeedSection({
     };
   }, [hasMore, loading, loadingMore, loadNextPage]);
 
-  // Show pinned poll at top when viewing 'all' or 'poll'
+  // Show pinned poll at top when viewing 'all' or 'poll' without active search
   const shouldShowPinnedPoll =
-    Boolean(pinnedPost && (filter === 'all' || filter === 'poll'));
+    Boolean(pinnedPost && (filter === 'all' || filter === 'poll') && !searchQuery);
 
   // Filter hidden posts for regular users; admins can see all posts with status tags
   const visiblePosts = currentUserProfile?.role === 'admin'
@@ -273,8 +284,18 @@ export function FeedSection({
     ? visiblePosts.filter((p) => p.id !== pinnedPost.id)
     : visiblePosts;
 
+  const communityName = activeCommunity?.name || 'Juja';
+
   return (
     <section aria-labelledby="feed-heading" className="space-y-4">
+      {/* Standard Top Feed Composer Card (Jakob's Law: "What's on your mind?") */}
+      <FeedComposerCard
+        currentUserProfile={currentUserProfile}
+        activeCommunity={activeCommunity}
+        onOpenComposer={onOpenComposer}
+        onOpenMemeStudio={onOpenMemeStudio}
+      />
+
       {/* 24-hour Mushene Moments Stories Bar */}
       <MusheneStoriesBar
         currentUserProfile={currentUserProfile}
@@ -304,7 +325,7 @@ export function FeedSection({
             id="feed-heading"
             className="font-display text-sm font-bold tracking-tight text-zinc-950 flex items-center gap-1.5"
           >
-            <span>Juja Campus Feed</span>
+            <span>{communityName} Campus Feed</span>
             <span className="text-[11px] font-normal text-zinc-400 font-mono">
               (Live stream)
             </span>
@@ -316,14 +337,35 @@ export function FeedSection({
           onClick={handleRefresh}
           disabled={loading || refreshing}
           className="cursor-pointer text-xs font-semibold text-emerald-800 hover:text-emerald-950 inline-flex items-center gap-1 transition-colors disabled:opacity-50"
-          title="Refresh Juja feed"
+          title={`Refresh ${communityName} feed`}
         >
           <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
           <span className="hidden xs:inline">Refresh</span>
         </button>
       </div>
 
-      {/* Optional Filter Chips (All, Polls, Mushene, Confessions, Memes, Stories, Photos) */}
+      {/* Search Filter Banner (if search is active) */}
+      {searchQuery && (
+        <div className="bg-emerald-50/90 border border-emerald-200/90 rounded-2xl p-3 flex items-center justify-between gap-2 text-xs text-emerald-950">
+          <div className="flex items-center gap-2">
+            <Search className="w-4 h-4 text-emerald-800 shrink-0" />
+            <span>
+              Searching for "<strong>{searchQuery}</strong>" in {communityName}
+            </span>
+          </div>
+          {onClearSearch && (
+            <button
+              type="button"
+              onClick={onClearSearch}
+              className="cursor-pointer text-xs font-bold text-emerald-800 hover:text-emerald-950 underline shrink-0"
+            >
+              Clear search
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Standard Tab Navigation (Jakob's Law) */}
       <FeedFilterChips currentFilter={filter} onSelectFilter={(f) => setFilter(f)} />
 
       {/* Main Endless Scroll Content */}
@@ -356,52 +398,55 @@ export function FeedSection({
           </div>
           <div className="space-y-1">
             <h3 className="font-display text-sm font-bold text-zinc-900">
-              No {filter !== 'all' ? `${filter} ` : ''}posts in {activeCommunity?.name || 'Juja'} yet
+              {searchQuery
+                ? `No posts matched "${searchQuery}" in ${communityName}`
+                : `No ${filter !== 'all' ? `${filter} ` : ''}posts in ${communityName} yet`}
             </h3>
             <p className="text-xs text-zinc-500 max-w-xs mx-auto">
-              Be the first comrade to share a post or poll in {activeCommunity?.name || 'Juja'}, or switch back to All to see everything.
+              {searchQuery
+                ? 'Try a different keyword or clear your search filter.'
+                : 'Be the first comrade to break campus news, ask a question, or post a meme!'}
             </p>
           </div>
-          <div className="flex items-center justify-center gap-2 pt-1">
-            {filter !== 'all' && (
+          <div className="flex items-center justify-center gap-2">
+            {searchQuery && onClearSearch ? (
               <button
                 type="button"
-                onClick={() => setFilter('all')}
-                className="px-3.5 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-semibold cursor-pointer transition-colors"
+                onClick={onClearSearch}
+                className="cursor-pointer min-h-[44px] px-4 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors"
               >
-                View All Posts
+                Clear Search
               </button>
-            )}
+            ) : null}
             <button
               type="button"
-              onClick={onOpenComposer}
-              className="px-4 py-2 rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+              onClick={() => onOpenComposer()}
+              className="cursor-pointer min-h-[44px] px-4 py-2 rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-semibold inline-flex items-center gap-1.5 transition-colors shadow-xs"
             >
-              <Plus className="w-4 h-4" />
-              <span>Create Post</span>
+              <Plus className="w-4 h-4 stroke-[2.5]" />
+              <span>Compose First Post</span>
             </button>
           </div>
         </div>
       ) : (
         <div className="space-y-4">
-          {/* Pinned Poll of the Week (Rendered at top of feed) */}
+          {/* Pinned Poll / Spotlight Post Card */}
           {shouldShowPinnedPoll && pinnedPost && (
-            <div className="relative">
-              <PostCard
-                post={pinnedPost}
-                currentUserProfile={currentUserProfile}
-                onRequireAuth={onRequireAuth}
-                onSelectPost={onSelectPost}
-                isPinned={true}
-                onTogglePin={handleTogglePin}
-                onReportPost={onReportPost}
-                onReportComment={onReportComment}
-                onToggleHidePost={onToggleHidePost}
-              />
-            </div>
+            <PostCard
+              key={`pinned-${pinnedPost.id}`}
+              post={pinnedPost}
+              currentUserProfile={currentUserProfile}
+              onRequireAuth={onRequireAuth}
+              onSelectPost={onSelectPost}
+              isPinned={true}
+              onTogglePin={currentUserProfile?.role === 'admin' ? handleTogglePin : undefined}
+              onReportPost={onReportPost}
+              onReportComment={onReportComment}
+              onToggleHidePost={onToggleHidePost}
+            />
           )}
 
-          {/* Endless Scroll Regular Posts */}
+          {/* Regular Stream of Posts */}
           {regularPosts.map((post) => (
             <PostCard
               key={post.id}
@@ -409,54 +454,29 @@ export function FeedSection({
               currentUserProfile={currentUserProfile}
               onRequireAuth={onRequireAuth}
               onSelectPost={onSelectPost}
-              isPinned={post.id === pinnedPollId}
-              onTogglePin={handleTogglePin}
+              isPinned={false}
+              onTogglePin={currentUserProfile?.role === 'admin' ? handleTogglePin : undefined}
               onReportPost={onReportPost}
               onReportComment={onReportComment}
               onToggleHidePost={onToggleHidePost}
             />
           ))}
 
-          {/* Infinite Scroll Sentinel */}
-          <div
-            ref={sentinelRef}
-            aria-hidden="true"
-            className="h-6 w-full flex items-center justify-center"
-          />
-
-          {/* Loading More Indicator */}
-          {loadingMore && (
-            <div className="py-4 text-center text-xs text-stone-500 flex items-center justify-center gap-2">
-              <Loader2 className="w-4 h-4 text-emerald-800 animate-spin" />
-              <span>Loading more {activeCommunity?.name || 'Juja'} posts...</span>
-            </div>
-          )}
-
-          {/* Manual Load More fallback button when observer doesn't fire */}
-          {hasMore && !loadingMore && (
-            <div className="text-center pt-2">
-              <button
-                type="button"
-                onClick={loadNextPage}
-                className="cursor-pointer px-4 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-semibold transition-colors"
-              >
-                Load more {activeCommunity?.name || 'Juja'} posts
-              </button>
-            </div>
-          )}
-
-          {/* End of endless scroll */}
-          {!hasMore && posts.length > 0 && (
-            <div className="py-6 text-center space-y-1 border-t border-stone-200/80">
-              <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50 px-3 py-1 rounded-full">
-                <CheckCircle className="w-3.5 h-3.5" />
-                <span>You're all caught up with {activeCommunity?.name || 'Juja'} campus</span>
+          {/* Infinite Scroll Sentinel & Loading Indicator */}
+          <div ref={sentinelRef} className="py-4 text-center">
+            {loadingMore && (
+              <div className="inline-flex items-center gap-2 text-xs text-zinc-500 font-medium">
+                <Loader2 className="w-4 h-4 animate-spin text-emerald-800" />
+                <span>Loading more campus stories...</span>
               </div>
-              <p className="text-[11px] text-zinc-400">
-                New stories, polls, and mushene appear as students post.
-              </p>
-            </div>
-          )}
+            )}
+            {!hasMore && posts.length > 0 && (
+              <div className="inline-flex items-center gap-1.5 text-xs text-zinc-400 font-mono py-2">
+                <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                <span>You're all caught up with {communityName} pulse!</span>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </section>

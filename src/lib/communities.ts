@@ -45,7 +45,7 @@ export const SEED_COMMUNITIES: Community[] = [
     status: 'approved',
     member_count: 1420,
     created_by: JUJA_COMMUNITY_ID,
-    creator_name: 'Paul Jubilee',
+    creator_name: 'Juja Student Council',
     creator_persona: '@juja_pioneer',
     moderator_ids: [JUJA_COMMUNITY_ID],
     created_at: '2026-01-01T00:00:00.000Z',
@@ -160,16 +160,20 @@ export const SEED_COMMUNITY_REQUESTS: CommunityRequest[] = [
   },
 ];
 
-/**
- * Retrieves all approved communities.
- */
 export function getAllCommunities(): Community[] {
   try {
     const raw = safeGetItem(LOCAL_COMMUNITIES_KEY);
     if (raw) {
       const parsed: Community[] = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed.filter((c) => c.status === 'approved');
+        return parsed
+          .filter((c) => c.status === 'approved')
+          .map((c) => ({
+            ...c,
+            creator_name: /paul\s*jubilee/i.test(c.creator_name || '')
+              ? 'Juja Student Council'
+              : c.creator_name,
+          }));
       }
     }
   } catch {
@@ -196,12 +200,19 @@ export function saveCommunities(communities: Community[]): void {
  */
 export function getCommunityBySlug(slug?: string | null): Community {
   const all = getAllCommunities();
+  let found: Community;
   if (!slug) {
-    return all.find((c) => c.slug === 'juja') || all[0] || SEED_COMMUNITIES[0];
+    found = all.find((c) => c.slug === 'juja') || all[0] || SEED_COMMUNITIES[0];
+  } else {
+    const cleanSlug = slug.toLowerCase().trim();
+    found = all.find((c) => c.slug.toLowerCase() === cleanSlug) || all.find((c) => c.slug === 'juja') || all[0] || SEED_COMMUNITIES[0];
   }
-  const cleanSlug = slug.toLowerCase().trim();
-  const found = all.find((c) => c.slug.toLowerCase() === cleanSlug);
-  return found || all.find((c) => c.slug === 'juja') || all[0] || SEED_COMMUNITIES[0];
+  return {
+    ...found,
+    creator_name: /paul\s*jubilee/i.test(found.creator_name || '')
+      ? 'Juja Student Council'
+      : found.creator_name,
+  };
 }
 
 /**

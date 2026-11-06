@@ -259,7 +259,9 @@ export const TopBar: React.FC<TopBarProps> = ({
                   {/* User Identity Header */}
                   <div className="px-3.5 py-2.5 border-b border-stone-100">
                     <p className="text-xs font-bold text-zinc-900 truncate">
-                      {profile.real_name || 'Verified Comrade'}
+                      {profile.role === 'admin' || /paul\s*jubilee/i.test(profile.real_name) || profile.real_name === 'pauljubilee50'
+                        ? 'Campus Super Admin'
+                        : profile.real_name || 'Verified Comrade'}
                     </p>
                     <p className="text-[11px] font-mono text-emerald-800 truncate">
                       {profile.persona_name}

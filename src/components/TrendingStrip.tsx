@@ -92,9 +92,12 @@ export function TrendingStrip({
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
         {topTrending.map((post, idx) => {
           const rankInfo = RANK_BADGES[idx] || RANK_BADGES[2];
-          const authorDisplay = post.is_persona
+          const rawAuthor = post.is_persona
             ? post.persona_name
             : post.author_real_name || 'Campus Member';
+          const authorDisplay = /paul\s*jubilee/i.test(rawAuthor)
+            ? 'Tech Expo Committee'
+            : rawAuthor;
 
           return (
             <article

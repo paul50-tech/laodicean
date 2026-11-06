@@ -16,6 +16,17 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
   onSignOut,
 }) => {
   const isAdmin = profile.role === 'admin';
+  const displayName =
+    isAdmin || /paul\s*jubilee/i.test(profile.real_name) || profile.real_name === 'pauljubilee50'
+      ? 'Campus Administrator'
+      : profile.real_name;
+
+  const displayEmail =
+    userEmail && !/pauljubilee/i.test(userEmail)
+      ? userEmail
+      : isAdmin
+      ? 'Moderator Account'
+      : null;
 
   return (
     <div className="bg-white border border-stone-200/90 rounded-2xl p-5 sm:p-6 shadow-xs space-y-5">
@@ -28,15 +39,15 @@ export const ProfileCard: React.FC<ProfileCardProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <h2 className="font-display text-lg font-bold text-zinc-950">
-                {profile.real_name}
+                {displayName}
               </h2>
             </div>
             <p className="text-xs font-mono font-medium text-emerald-800">
               {profile.persona_name}
             </p>
-            {userEmail && (
+            {displayEmail && (
               <p className="text-[11px] text-zinc-400 mt-0.5 truncate max-w-[200px]">
-                {userEmail}
+                {displayEmail}
               </p>
             )}
           </div>

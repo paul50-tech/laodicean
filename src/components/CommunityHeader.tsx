@@ -170,7 +170,7 @@ export function CommunityHeader({
               <Users className="w-3.5 h-3.5 text-zinc-500" />
               <span><strong>{(community.member_count || 1).toLocaleString()}</strong> members</span>
             </span>
-            {community.creator_name && (
+            {community.creator_name && !/paul|jubilee/i.test(community.creator_name) && (
               <span className="text-[11px] text-zinc-500 hidden sm:inline">
                 Lead: <strong className="text-zinc-700">{community.creator_name}</strong>
               </span>

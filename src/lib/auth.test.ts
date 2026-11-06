@@ -19,7 +19,7 @@ test('isAdminEmail identifies pauljubilee50@gmail.com regardless of casing', () 
 test('validateRealName checks minimum length and empty input', () => {
   assert.equal(validateRealName(''), 'Please enter your real display name.');
   assert.equal(validateRealName('A'), 'Name must be at least 2 characters.');
-  assert.equal(validateRealName('Paul Jubilee'), null);
+  assert.equal(validateRealName('Brian Kiprop'), null);
 });
 
 test('formatPersonaName ensures leading @ and lowercases clean handle', () => {

@@ -113,7 +113,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
                 required
                 value={realName}
                 onChange={(e) => setRealName(e.target.value)}
-                placeholder="e.g. Paul Jubilee"
+                placeholder="e.g. Brian Kiprop"
                 className="w-full h-11 pl-9 pr-3 rounded-xl border border-stone-300 bg-white text-sm text-zinc-900 focus:outline-none focus:border-emerald-800 focus:ring-1 focus:ring-emerald-800"
               />
             </div>

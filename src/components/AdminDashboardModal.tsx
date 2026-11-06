@@ -478,7 +478,7 @@ export function AdminDashboardModal({
                 </span>
               </div>
               <p className="text-[11px] text-stone-300">
-                Logged in as <strong className="text-white">{currentUserProfile.real_name}</strong> ({currentUserProfile.id})
+                Active Session: <strong className="text-white">Campus Super Admin</strong> (Verified Moderator Access)
               </p>
             </div>
           </div>

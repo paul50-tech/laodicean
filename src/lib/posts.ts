@@ -388,7 +388,7 @@ export const SEED_JUJA_POSTS: FeedPost[] = [
     persona_name: '@tech_society',
     persona_avatar: '🚀',
     author_id: 'real-author-event-1',
-    author_real_name: 'Paul Jubilee',
+    author_real_name: 'Tech Expo Committee',
     author_role: 'admin',
     status: 'live',
     event_data: {

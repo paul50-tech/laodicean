@@ -197,7 +197,7 @@ export function getSeedMoments(): MusheneMoment[] {
       author_name: '@super_metro_fan',
       author_avatar: '🚌',
       is_persona: false,
-      author_real_name: 'Paul Jubilee',
+      author_real_name: 'Collins K.',
       text: 'Super Metro conductor at Juja stage just announced 50 bob to town because of Friday jam. Fastest stampede in university history.',
       tag: 'Juja Stage',
       bg_gradient: 'from-indigo-800 via-blue-700 to-cyan-600',

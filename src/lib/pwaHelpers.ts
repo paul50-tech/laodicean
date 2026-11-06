@@ -36,7 +36,12 @@ export function getOfflineFeedCache(): FeedPost[] {
     if (!raw) return inMemoryFeedCache;
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
-      return parsed;
+      return parsed.map((p: FeedPost) => ({
+        ...p,
+        author_real_name: /paul\s*jubilee/i.test(p.author_real_name || '')
+          ? 'Tech Expo Committee'
+          : p.author_real_name,
+      }));
     }
     return inMemoryFeedCache;
   } catch {

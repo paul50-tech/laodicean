@@ -174,8 +174,8 @@ export async function fetchProfile(userId: string, email?: string | null): Promi
       const isAdmin = isAdminEmail(email);
       return {
         id: userId,
-        real_name: email?.split('@')[0] || 'Campus User',
-        persona_name: `@juja_${userId.slice(0, 5)}`,
+        real_name: isAdmin ? 'Campus Administrator' : (email?.split('@')[0] || 'Campus User'),
+        persona_name: isAdmin ? '@campus_admin' : `@juja_${userId.slice(0, 5)}`,
         persona_avatar: DEFAULT_AVATARS[0].emoji,
         role: isAdmin ? 'admin' : 'user',
         created_at: new Date().toISOString(),
@@ -183,10 +183,15 @@ export async function fetchProfile(userId: string, email?: string | null): Promi
       };
     }
 
-    // Ensure admin role for pauljubilee50@gmail.com
+    // Ensure admin role for designated admin email
     if (isAdminEmail(email) && data.role !== 'admin') {
       await supabase.from('profiles').update({ role: 'admin' }).eq('id', userId);
       data.role = 'admin';
+    }
+
+    // Prevent exposing internal admin real name in UI
+    if (data.role === 'admin' && (/paul\s*jubilee/i.test(data.real_name) || data.real_name === 'pauljubilee50')) {
+      data.real_name = 'Campus Administrator';
     }
 
     return data as Profile;

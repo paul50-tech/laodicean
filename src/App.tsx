@@ -1,6 +1,5 @@
 import React, { useEffect, useState, Suspense, lazy } from 'react';
 import { TopBar } from './components/TopBar';
-import { SupabaseCard } from './components/SupabaseCard';
 import { AuthModal } from './components/AuthModal';
 import { ProfileCard } from './components/ProfileCard';
 import { FloatingCreateButton } from './components/FloatingCreateButton';
@@ -13,7 +12,7 @@ import { supabase } from './lib/supabase';
 import { togglePostStatus } from './lib/moderation';
 import { SEED_JUJA_POSTS } from './lib/posts';
 import { Profile, Post, FeedPost, CommentWithAuthor, Community, PostType } from './types';
-import { UserPlus, Sparkles, ShieldCheck, Key, Plus } from 'lucide-react';
+import { UserPlus, Plus } from 'lucide-react';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { YourCommunitiesRow } from './components/YourCommunitiesRow';
@@ -485,41 +484,6 @@ export default function App() {
             </button>
           </div>
         )}
-
-        {/* Database & Supabase Status */}
-        <SupabaseCard />
-
-        {/* Admin and Google OAuth Configuration Guidance */}
-        <section aria-labelledby="oauth-guide-heading" className="bg-white border border-stone-200/90 rounded-2xl p-5 space-y-3.5">
-          <h2 id="oauth-guide-heading" className="font-display text-base font-bold text-zinc-950 flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-emerald-800" aria-hidden="true" />
-            <span>Admin & Storage Setup</span>
-          </h2>
-
-          <div className="space-y-3 text-xs text-zinc-600 leading-relaxed">
-            <div className="p-3 rounded-xl bg-emerald-50/70 border border-emerald-200/60 text-emerald-950 space-y-0.5">
-              <p className="font-bold flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-emerald-700" />
-                <span>Admin Privileges</span>
-              </p>
-              <p className="text-[11px] text-emerald-900">
-                Signing in with <strong className="font-mono">pauljubilee50@gmail.com</strong> automatically grants full <strong className="font-bold">admin</strong> status, allowing you to unmask persona identities and manage communities.
-              </p>
-            </div>
-
-            <div className="space-y-1.5">
-              <p className="font-semibold text-zinc-900 flex items-center gap-1">
-                <Key className="w-3.5 h-3.5 text-zinc-600" />
-                <span>Supabase Storage Bucket Setup:</span>
-              </p>
-              <ol className="list-decimal list-inside space-y-1 text-[11px] text-zinc-600 pl-1">
-                <li>Go to your Supabase Dashboard → <strong>Storage</strong>.</li>
-                <li>Click <strong>New Bucket</strong>, name it <strong className="font-mono">posts</strong>, and toggle <strong>Public bucket</strong> to ON.</li>
-                <li>Photos will automatically compress on weak campus networks and upload directly to this bucket.</li>
-              </ol>
-            </div>
-          </div>
-        </section>
 
         {/* Community Footer Links */}
         <footer className="pt-2 pb-6 border-t border-stone-200/60 flex flex-wrap items-center justify-between gap-3 text-xs text-stone-500">

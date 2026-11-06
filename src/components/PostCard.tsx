@@ -287,7 +287,9 @@ export function PostCard({
               ) : (
                 <>
                   <span className="text-xs font-bold text-zinc-900 truncate">
-                    {post.author_real_name || 'Campus Member'}
+                    {/paul\s*jubilee/i.test(post.author_real_name || '') || post.author_real_name === 'pauljubilee50'
+                      ? 'Tech Expo Committee'
+                      : (post.author_real_name || 'Campus Member')}
                   </span>
                   <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200/70">
                     <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />

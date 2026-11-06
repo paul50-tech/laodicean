@@ -232,7 +232,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           className="w-full py-2 px-3 rounded-xl border border-dashed border-emerald-300 bg-emerald-50/70 hover:bg-emerald-100 text-emerald-900 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
         >
           <Sparkles className="w-3.5 h-3.5 text-emerald-700" />
-          <span>Quick Admin Sign In (pauljubilee50@gmail.com)</span>
+          <span>Quick Campus Moderator Access</span>
         </button>
 
         <div className="relative flex items-center justify-center">
@@ -272,7 +272,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   required
                   value={realName}
                   onChange={(e) => setRealName(e.target.value)}
-                  placeholder="e.g. Paul Jubilee"
+                  placeholder="e.g. Brian Kiprop"
                   className="w-full h-11 pl-9 pr-3 rounded-xl border border-stone-300 bg-white text-sm text-zinc-900 focus:outline-none focus:border-emerald-800"
                 />
               </div>
@@ -390,16 +390,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             )}
           </button>
 
-          {/* Instant Admin Access Button for pauljubilee50@gmail.com */}
+          {/* Instant Admin Access Button */}
           <div className="pt-2.5 border-t border-stone-200/70 text-center">
             <button
               type="button"
               onClick={() => {
                 const adminUser = {
-                  id: 'admin-paul-user-id',
+                  id: 'admin-campus-moderator-id',
                   email: 'pauljubilee50@gmail.com',
                   user_metadata: {
-                    real_name: 'Paul Jubilee',
+                    real_name: 'Campus Administrator',
                     persona_name: '@campus_admin',
                     persona_avatar: '🎓',
                   },
@@ -410,7 +410,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               className="cursor-pointer w-full py-2 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
             >
               <Sparkles className="w-3.5 h-3.5 text-amber-700" />
-              <span>Sign in as Admin (pauljubilee50@gmail.com)</span>
+              <span>Sign in with Moderator Access</span>
             </button>
             <p className="text-[10px] text-zinc-400 mt-1">
               Provides direct access to the Moderator Deck & Persona Reveal
